@@ -1,106 +1,105 @@
+<div align="center">
+
 # StageFlow Editor
 
-A visual node editor for [StageFlow](https://github.com/leo-need-more-coffee/stageflow)
-pipelines. Plain HTML and JavaScript (ES modules), no build step and no
+**Draw a pipeline, run it on the real core, watch it go node by node.**
+
+[![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
+[![node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)](package.json)
+[![no dependencies](https://img.shields.io/badge/dependencies-none-blue)](package.json)
+
+[Core](https://github.com/leo-need-more-coffee/stageflow) ·
+[Example backend](https://github.com/leo-need-more-coffee/stageflow-example) ·
+[Documentation](https://leo-need-more-coffee.github.io/stageflow/)
+
+</div>
+
+![The editor with a pipeline open](docs/img/editor.png)
+
+A visual editor for [StageFlow](https://github.com/leo-need-more-coffee/stageflow)
+pipelines. Plain HTML and ES modules: no build step, no framework, no
 dependencies.
 
-The editor is **static front-end only**: it holds no stage registry and
-executes nothing. The stages and the run API live on a StageFlow backend, and
-which one that is the user says on the connection screen when the editor opens.
-So a graph is drawn here and executed by the real core — the step debugger
-shows what will actually happen, not a second implementation of the semantics
-in JavaScript.
+The editor holds no stages and executes nothing. It asks a StageFlow backend
+for the stage specifications, draws the graph from them, and sends runs back
+to that backend. So what the debugger shows is the core's own semantics, not a
+second implementation of them in JavaScript.
 
-A ready-made backend to point it at:
-[stageflow-example](https://github.com/leo-need-more-coffee/stageflow-example).
+## Run it
 
-## Running it
+```bash
+npm start                      # http://127.0.0.1:8080
+```
+
+or:
 
 ```bash
 docker compose up --build      # http://127.0.0.1:8080
 ```
 
-or without Docker:
+Then type the address of a backend on the connection screen — for example
+`http://127.0.0.1:8765` if you are running the
+[example](https://github.com/leo-need-more-coffee/stageflow-example). The
+address is remembered, and `?backend=http://host:port` in the URL skips the
+question.
 
-```bash
-npm start                      # node server.js, http://127.0.0.1:8080
-```
+`server.js` is a hundred lines of static file serving with no dependencies:
+ES modules cannot be loaded from `file://`, so the page has to come over http.
+`PORT` and `HOST` come from the environment (`UI_PORT` in compose).
 
-`server.js` is a static server of about a hundred lines with no dependencies:
-ES modules are not loaded from `file://`, so the page has to come over http —
-that is the whole of its job. `PORT` and `HOST` are taken from the environment
-(`UI_PORT` in compose).
+## What it does
 
-Then open the page and type the address of a backend, for example
-`http://127.0.0.1:8765`. It is checked by the very request the editor cannot
-work without (`GET /api/stages`), remembered until it is changed, and can be
-changed later in "File" → "Backend…". `?backend=http://host:port` in the URL
-skips the question — handy for a bookmark or a demo.
-
-## What it can do
-
-- **The graph is assembled on the canvas**, not in a form: pull a wire from a
-  port onto a node to link them or into empty space to create a node there,
-  `⊕` / `×` on a link insert and cut, a node from the palette can be dragged
-  onto a link or a card. Every way of adding a node ends with a connection.
-- **Two sorts of connectors on two axes**: execution order is vertical
-  (diamonds, the real edges of the JSON), data flows are horizontal (circles,
-  derived from the graph and colored per variable).
-- **Regions**: the branches of `parallel`, the body of a `try` and its `except`
-  handlers are framed; membership is derived from the graph, so a frame cannot
-  diverge from the structure.
-- **The inspector is built from the stage spec**, not from the JSON structure:
-  forms only, no hand-written JSON, required arguments that are not filled in
-  are marked red.
-- **Running and step debugging on the real core**: the current node on the
-  graph, stepping, a pace between nodes, viewing and editing frame variables.
-- **A secret store**: API keys live apart from the graph, only the name goes
-  into the JSON, and the values are visible neither in the debug panel nor in
+- **The graph is built on the canvas.** Pull a wire from a port onto a node to
+  link them, or into empty space to create one there. `⊕` and `×` on a link
+  insert and cut. A node dragged from the palette lands on a link or after a
+  card. Every way of adding a node ends with a connection.
+- **Two kinds of connector on two axes.** Execution order runs vertically and
+  is the real `next` of the JSON; data flows run horizontally, are derived from
+  the graph, and are coloured per variable.
+- **Regions are derived, not drawn.** The branches of a `parallel` and the body
+  and handlers of a `try` are framed from the structure of the graph, so a
+  frame cannot disagree with it.
+- **The inspector comes from the stage spec.** Forms instead of hand-written
+  JSON, with unfilled required arguments marked.
+- **Step debugging on the real core**: the current node on the graph, stepping,
+  a pace between nodes, and frame variables you can read and edit mid-run.
+- **Secrets stay out of the JSON.** Only the name of a key goes into the
+  pipeline; values live in the store and never appear in the debug panel or
   the event log.
-- **Session**: undo/redo, a node clipboard, foldable panels, and the pipeline,
-  the view and the panel layout surviving a reload.
-- Subpipelines, live graph validation, import/export of JSON, pipeline
-  settings (`types` / `variables` / `metadata`).
+- Subpipelines, live validation, JSON import and export, undo/redo, a node
+  clipboard, and a session that survives a reload.
+
+![Step debugging](docs/img/debugger.png)
 
 ## Documentation
 
-- [The backend](docs/backend.md) — what the editor asks of a backend: the
-  endpoints, CORS, the shape of a stage spec
-- [Building a graph](docs/canvas.md) — the two sorts of connectors, the mouse
-  gestures, regions, data wires, the auto-layout
-- [The interface](docs/interface.md) — the menu bar and hotkeys, the inspector,
-  what makes a node recognisable, the theme, the session
-- [Running and debugging](docs/running.md) — the run pace, starting variables,
-  the debug panel, the run API
-- [Secrets](docs/secrets.md) — where the keys live and why they are not in the
-  pipeline
-- [Embedding as a library](docs/embedding.md) — `createEditor` options, the
-  public API, the architecture of `js/`
+| Page | What it covers |
+|---|---|
+| [The backend](docs/backend.md) | the endpoints the editor needs, CORS, the shape of a stage spec |
+| [Building a graph](docs/canvas.md) | connectors, mouse gestures, regions, auto-layout |
+| [The interface](docs/interface.md) | menus and hotkeys, the inspector, the theme, the session |
+| [Running and debugging](docs/running.md) | the run pace, starting variables, the debug panel, the run API |
+| [Secrets](docs/secrets.md) | where keys live and why they are not in the pipeline |
+| [Embedding](docs/embedding.md) | `createEditor` options, the public API, the layout of `js/` |
 
 ## Tests
 
-The invariants that cannot be caught by eye are checked by plain scripts — no
-test framework, no dependencies:
+Plain node scripts, no framework:
 
 ```bash
-npm test          # or: for t in tests/*.mjs; do node "$t"; done
+npm test
 ```
 
-| script | what it checks |
-|---|---|
-| `tests/wiring.mjs` | every node kind has a port for the next node, insertion into an edge keeps the tail of the graph, cards do not overlap |
-| `tests/ports.mjs` | every read and write a node declares, CEL references included |
-| `tests/layout.mjs` | 291 random graphs: no foreign node inside a region frame, no overlaps, the layout is idempotent |
-| `tests/history.mjs` | undo/redo walk over real edits only |
-| `tests/clipboard.mjs` | pasted copies do not control the originals |
-| `tests/rows.mjs` | a freshly added table row does not disappear |
-| `tests/secrets.mjs` | secret values do not leave the store |
+They cover what the eye misses: that every node kind has a port for the next
+node, that inserting into an edge keeps the tail of the graph, that 291 random
+layouts produce no overlaps and no foreign node inside a region frame, that
+undo/redo walks real edits only, that pasted copies are independent, and that
+secret values never leave the store.
 
 ## Known limitations
 
-Input into a running session (a `wait_input` stage) cannot be provided from the
-UI — that needs a control of its own in the debug panel; there are no
-breakpoints, and a step is still only "the next node".
+A stage that waits for input (`wait_input`) cannot be answered from the UI
+yet, and stepping is still one node at a time — there are no breakpoints.
 
 ## License
 
