@@ -1,0 +1,10 @@
+# The editor alone: it is static front-end and knows nothing about a backend
+# until the user types its address on the connection screen. A backend is a
+# separate thing with a compose file of its own — see stageflow-example.
+services:
+  ui:
+    build: .
+    image: stageflow-ui
+    ports:
+      - "${UI_PORT:-8080}:8080"
+    restart: unless-stopped

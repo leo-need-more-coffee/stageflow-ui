@@ -1,0 +1,1958 @@
+/* StageFlow Editor — the dark theme of the redesign layout.
+ *
+ * Design principles: cold graphite (the canvas darker than the panels, the
+ * panels darker than the cards — depth comes from tone, not from shadows),
+ * 1px borders in white with a low alpha, one turquoise accent for the whole
+ * interface, the color of a node kind only on the icon tile and the port dot,
+ * Manrope for the interface and IBM Plex Mono for identifiers, variable names
+ * and code, micro headings in small caps. The color semantics are uniform:
+ * green is a write and "onwards", amber is a read and the "yes" branch, red is
+ * errors and except, violet is areas. The geometry of the node cards (row
+ * heights) agrees with geometry.js — do not change one without the other.
+ */
+
+/* a `display` from a class beats the browser's `[hidden] { display: none }`,
+   so anything hidden through flex (the edge buttons, the hint) stayed on screen */
+[hidden] { display: none !important; }
+
+:root {
+  --bg: #0b0d11;        /* the canvas — the darkest layer */
+  --chrome: #0e1116;    /* the toolbar and the status bar */
+  --panel: #12151b;     /* the side panels */
+  --panel-2: #171b22;   /* the node cards */
+  --panel-3: #1b2029;   /* raised blocks: terminals, nested sections */
+  --well: #0f1216;      /* input fields */
+  --line: rgba(255, 255, 255, 0.07);
+  --line-strong: rgba(255, 255, 255, 0.12);
+  --ink: #e7e9ed;
+  --ink-code: #c7ccd4;
+  --ink-soft: #97a0ad;
+  --ink-faint: #5b6472;
+  --accent: #3fcbae;
+  --accent-bright: #57e0c2;
+  --accent-soft: rgba(63, 203, 174, 0.14);
+  --danger: #e8697a;
+  --ok: #4ecb86;
+  --warn: #e8b85c;
+  --ui: "Manrope", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --mono: "IBM Plex Mono", "SF Mono", ui-monospace, Menlo, monospace;
+  --radius: 8px;
+  --radius-card: 10px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  height: 100%;
+  background: var(--bg);
+  color: var(--ink);
+  font: 13px/1.45 var(--ui);
+  -webkit-font-smoothing: antialiased;
+}
+
+button, input, select, textarea {
+  font: inherit;
+  color: inherit;
+}
+
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-thumb { background: rgba(255, 255, 255, 0.14); border-radius: 5px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255, 255, 255, 0.22); }
+::-webkit-scrollbar-track { background: transparent; }
+
+/* -------------------------------------------------------------- frame */
+
+.sf-editor {
+  position: relative; /* the menu bar opens popovers above the canvas */
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+}
+
+.sf-main {
+  display: flex;
+  flex: 1;
+  min-height: 0;
+}
+
+/* A panel plus its folding handle. The handle lives on the inner edge of the
+   panel — where one looks when the panel is in the way — rather than in the
+   toolbar among the graph actions. A folded panel leaves the same handle (a
+   rail) in its place, so that bringing it back is exactly as easy as putting it
+   away. */
+.sf-side {
+  position: relative;
+  display: flex;
+  flex-shrink: 0;
+  min-height: 0;
+}
+
+.sf-side-toggle,
+.sf-rail {
+  width: 14px;
+  height: 44px;
+  padding: 0;
+  display: grid;
+  place-items: center;
+  background: var(--panel-3);
+  border: 1px solid var(--line-strong);
+  color: var(--ink-faint);
+  font-family: var(--ui);
+  font-size: 12px;
+  line-height: 1;
+  cursor: pointer;
+  transition: color 120ms ease, background 120ms ease, border-color 120ms ease;
+}
+
+.sf-side-toggle {
+  position: absolute;
+  top: 50%;
+  transform: translateY(-50%);
+  z-index: 5;
+}
+
+.sf-side-left .sf-side-toggle {
+  right: -1px;
+  border-right: none;
+  border-radius: 7px 0 0 7px;
+}
+
+.sf-side-right .sf-side-toggle {
+  left: -1px;
+  border-left: none;
+  border-radius: 0 7px 7px 0;
+}
+
+.sf-side-toggle:hover,
+.sf-rail:hover {
+  color: var(--ink);
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+/* the rail is visible only where a panel is folded; it is slightly more
+   noticeable than the handle — a folded panel is not visible at all, and it has
+   to be brought back by something findable */
+.sf-rail { display: none; align-self: center; color: var(--ink-soft); background: var(--panel); }
+.sf-rail-left { border-left: none; border-radius: 0 7px 7px 0; }
+.sf-rail-right { border-right: none; border-radius: 7px 0 0 7px; }
+
+.sf-editor.sf-no-palette .sf-rail-left,
+.sf-editor.sf-no-inspector .sf-rail-right { display: grid; }
+
+/* folded panels: the canvas takes their room entirely */
+.sf-editor.sf-no-palette .sf-side-left,
+.sf-editor.sf-no-inspector .sf-side-right { display: none; }
+
+/* ------------------------------------------------------------- toolbar */
+
+.sf-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 52px;
+  padding: 0 16px;
+  background: var(--chrome);
+  border-bottom: 1px solid var(--line);
+}
+
+.sf-brand {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-weight: 800;
+  font-size: 15px;
+  letter-spacing: 0.01em;
+  margin-right: 10px;
+  padding-right: 14px;
+  border-right: 1px solid var(--line);
+}
+
+.sf-brand-mark { color: var(--accent); font-size: 17px; line-height: 1; }
+
+.sf-spacer { flex: 1; }
+
+/* the graph selector is no longer a menu but "which document is open": it is
+   set off by a rule from the menu bar sections, like the brand on the left */
+.sf-graphsel {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-left: 10px;
+  padding-left: 14px;
+  border-left: 1px solid var(--line);
+}
+
+/* ------------------------------------------------------------- buttons */
+
+.sf-btn {
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: var(--radius);
+  color: var(--ink);
+  font-weight: 600;
+  font-size: 12.5px;
+  padding: 7px 13px;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+
+.sf-btn:hover:not(:disabled) { background: rgba(255, 255, 255, 0.06); border-color: rgba(255, 255, 255, 0.22); }
+.sf-btn:disabled { color: var(--ink-faint); cursor: default; }
+.sf-btn-small { padding: 6px 9px; font-size: 13px; line-height: 1; }
+.sf-primary { background: var(--accent); border-color: var(--accent); color: #08110f; font-weight: 700; }
+.sf-primary:hover:not(:disabled) { background: var(--accent-bright); border-color: var(--accent-bright); }
+.sf-danger { color: var(--danger); border-color: rgba(232, 105, 122, 0.4); }
+.sf-danger:hover:not(:disabled) { background: rgba(232, 105, 122, 0.1); }
+
+button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-visible {
+  outline: 1px solid var(--accent);
+  outline-offset: 1px;
+}
+
+/* ------------------------------------------------------------- palette */
+
+.sf-palette {
+  width: 240px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 14px 10px;
+  background: var(--panel);
+  border-right: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sf-search {
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  margin-bottom: 6px;
+  width: 100%;
+  font-size: 12.5px;
+}
+
+.sf-search::placeholder { color: var(--ink-faint); }
+
+.sf-palette-title, .sf-palette-cat, .sf-spec-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+
+/* the inspector field labels are in ordinary case: they are read, not scanned */
+.sf-field-label {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--ink-soft);
+}
+
+.sf-palette-title { margin: 14px 0 5px; padding: 0 10px; }
+.sf-palette-cat { margin: 12px 0 3px; padding: 0 10px; }
+
+/* a palette row has no borders: it is a list, not a set of buttons; the node
+   kind is recognised by the icon tile, as on a card */
+.sf-palette-item {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 6px 10px;
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 12px;
+  cursor: pointer;
+  transition: background 120ms ease, color 120ms ease;
+}
+
+.sf-palette-item:hover { background: rgba(255, 255, 255, 0.05); color: var(--ink); }
+
+/* a palette item is a drag handle: no text selection and no native
+   drag-and-drop of the picture inside (it takes the gesture over and the drop
+   is lost) */
+.sf-palette-item { user-select: none; -webkit-user-drag: none; }
+.sf-palette-item * { pointer-events: none; }
+.sf-palette-stage { font-size: 12px; }
+.sf-palette-stages { display: flex; flex-direction: column; gap: 1px; }
+
+.sf-palette-item .sf-icon { width: 22px; height: 22px; font-size: 11px; border-radius: 6px; }
+.sf-palette-item .sf-icon img,
+.sf-palette-item .sf-icon.sf-icon-mask::after { width: 13px; height: 13px; }
+.sf-kind-title .sf-icon img,
+.sf-kind-title .sf-icon.sf-icon-mask::after { width: 18px; height: 18px; }
+
+/* -------------------------------------------------------------- canvas */
+
+.sf-canvas {
+  position: relative;
+  flex: 1;
+  overflow: hidden;
+  background-color: var(--bg);
+  background-image: radial-gradient(circle, rgba(255, 255, 255, 0.055) 1px, transparent 1px);
+  background-size: 24px 24px;
+  background-position: -4px -4px;
+  cursor: default;
+}
+
+.sf-viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+}
+
+.sf-edges {
+  position: absolute;
+  overflow: visible;
+  width: 1px;
+  height: 1px;
+  pointer-events: none;
+}
+
+/* --- regions: the areas around parallel branches ---------------------- */
+
+.sf-regions {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+.sf-region {
+  position: absolute;
+  border: 1.5px dashed color-mix(in srgb, var(--region-color, var(--line-strong)) 45%, transparent);
+  border-radius: 16px;
+  background: color-mix(in srgb, var(--region-color, var(--ink-soft)) 5%, transparent);
+  pointer-events: none; /* the frame must not intercept clicks on the canvas */
+}
+
+.sf-region-active {
+  border-style: solid;
+  background: color-mix(in srgb, var(--region-color, var(--ink-soft)) 11%, transparent);
+}
+
+.sf-region-label {
+  position: absolute;
+  top: -1px;
+  left: 14px;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px 5px;
+  border-radius: 0 0 9px 9px;
+  background: color-mix(in srgb, var(--region-color, var(--ink-soft)) 18%, var(--chrome));
+  border: 1px solid color-mix(in srgb, var(--region-color, var(--ink-soft)) 40%, transparent);
+  border-top: none;
+  color: var(--region-color, var(--ink));
+  font-family: var(--mono);
+  font-weight: 600;
+  font-size: 11px;
+  line-height: 14px;
+  user-select: none;
+  cursor: grab;
+  pointer-events: auto; /* but an area can be dragged by its label */
+}
+
+.sf-region-label:active { cursor: grabbing; }
+.sf-region-glyph {
+  display: grid;
+  place-items: center;
+  width: 18px;
+  height: 18px;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--region-color, var(--ink-soft)) 22%, transparent);
+  font-size: 11px;
+}
+
+.sf-edge {
+  fill: none;
+  stroke: rgba(151, 160, 173, 0.45);
+  stroke-width: 1.6;
+}
+
+.sf-edge.sf-dashed { stroke-dasharray: 5 4; }
+.sf-edge.sf-selected { stroke: var(--accent); stroke-width: 2.25; }
+.sf-edge-temp { stroke: var(--accent); stroke-dasharray: 4 4; }
+
+/* the arrowhead of an order edge — the direction of execution */
+.sf-arrow-head { fill: rgba(151, 160, 173, 0.65); }
+.sf-edge-order.sf-selected { marker-end: url(#sf-arrow); }
+
+/* data edges: the color is set inline per variable. In the "all" mode they are
+   heavily dimmed at rest — there are many of them and together they turn into
+   porridge; a flow is meant to be read by hovering (then the path of the
+   variable lights up). */
+.sf-edge-data {
+  stroke-width: 1.3;
+  opacity: 0.3;
+  pointer-events: stroke; /* only for the sake of the <title> tooltip */
+}
+
+.sf-edge-data:hover { opacity: 1; stroke-width: 2.2; }
+
+/* the "focus" mode: only the wires of the selected node hang on the canvas —
+   the rest lie hidden in the SVG and surface when a variable is hovered. Since
+   there are only a few of them, hiding them behind opacity is no longer needed. */
+.sf-canvas.sf-data-focus .sf-edge-data { display: none; }
+
+.sf-canvas.sf-data-focus .sf-edge-data.sf-focus,
+.sf-canvas.sf-data-focus .sf-edge-data.sf-hl-on {
+  display: inline;
+  opacity: 0.9;
+  stroke-width: 1.8;
+}
+
+/* hovering a variable: its path lights up, the rest goes out */
+.sf-canvas.sf-hl .sf-edge-data { opacity: 0.08; }
+.sf-canvas.sf-hl .sf-edge-data.sf-hl-on { opacity: 1; stroke-width: 2.4; }
+.sf-canvas.sf-hl .sf-edge-order { opacity: 0.25; }
+
+.sf-row.sf-hl-on {
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  border-radius: 3px;
+}
+
+.sf-row.sf-hl-on .sf-rlabel { color: var(--ink); }
+
+.sf-edge-hit {
+  fill: none;
+  stroke: transparent;
+  stroke-width: 12;
+  pointer-events: stroke;
+  cursor: pointer;
+}
+
+/* the overlay for the wire in hand: redrawing the graph does not clear it */
+.sf-overlay { z-index: 3; }
+
+/* ------------------------------------------- assembling a graph by mouse */
+
+/* the edge under the cursor — a candidate for inserting a node into it */
+.sf-edge.sf-edge-hot { stroke: var(--accent); stroke-width: 2.25; }
+
+/* the layer of overlay buttons above the edges (in world coordinates) */
+.sf-tools { position: absolute; top: 0; left: 0; }
+
+.sf-edge-tools {
+  position: absolute;
+  transform: translate(-50%, -50%);
+  display: flex;
+  gap: 4px;
+  z-index: 4;
+}
+
+.sf-edge-btn {
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 50%;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-3);
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1;
+  cursor: pointer;
+}
+
+.sf-edge-plus { border-color: var(--accent); color: var(--accent); }
+.sf-edge-plus:hover { background: var(--accent); color: #08110f; }
+.sf-edge-cut:hover { background: var(--danger); border-color: var(--danger); color: #1a0d10; }
+
+/* while a wire is in hand: the targets read clearly, the rest does not distract */
+.sf-canvas.sf-connecting { cursor: crosshair; }
+.sf-canvas.sf-connecting .sf-node { transition: none; }
+
+/* the "what will happen now" hint sits at the bottom edge of the canvas, so as
+   not to cover the place being aimed at */
+.sf-hint {
+  position: absolute;
+  left: 50%;
+  bottom: 14px;
+  transform: translateX(-50%);
+  padding: 5px 12px;
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--chrome) 88%, transparent);
+  border: 1px solid var(--line-strong);
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  white-space: nowrap;
+  pointer-events: none;
+  z-index: 15;
+}
+
+/* an empty graph: where to start */
+.sf-empty {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 420px;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  text-align: center;
+  color: var(--ink-faint);
+  font-size: 12.5px;
+  line-height: 1.5;
+  pointer-events: none;
+}
+
+.sf-empty-title {
+  font-family: var(--mono);
+  font-size: 13px;
+  color: var(--ink-soft);
+  margin-bottom: 2px;
+}
+
+/* the selection marquee of the right button */
+.sf-marquee {
+  position: absolute;
+  z-index: 12;
+  border: 1px dashed var(--accent);
+  background: var(--accent-soft);
+  pointer-events: none;
+}
+
+/* the ghost card: the node being carried from the palette */
+.sf-ghost {
+  position: fixed;
+  z-index: 60;
+  transform: translate(-50%, -50%);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 11px;
+  border-radius: var(--radius-card);
+  background: var(--panel-2);
+  border: 1px solid var(--accent);
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.5);
+  pointer-events: none;
+}
+
+.sf-ghost .sf-icon { width: 20px; height: 20px; font-size: 11px; border-radius: 5px; }
+
+/* ---------------------------------------------------------------- node */
+
+/* the width is set inline from nodeLayout (it grows with the order outlets) */
+.sf-node {
+  position: absolute;
+  background: var(--panel-2);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-card);
+  user-select: none;
+  cursor: grab;
+  transition: border-color 100ms ease, box-shadow 100ms ease;
+}
+
+.sf-node:active { cursor: grabbing; }
+.sf-node:hover { border-color: rgba(255, 255, 255, 0.22); }
+
+/* a terminal is not "one more stage" but the end of the road: a lighter
+   background and softer corners */
+.sf-node[data-kind="terminal"] {
+  background: var(--panel-3);
+  border-radius: 12px;
+  border-color: rgba(255, 255, 255, 0.14);
+}
+
+/* THE NODE STATES COME AFTER THE KIND RULES: a kind selector (`[data-kind]`
+   plus a class) has the same specificity as a state and, standing below, would
+   beat its border — a terminal caught by the selection marquee stayed
+   unhighlighted although it was selected. */
+.sf-node.sf-selected {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent), 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+/* a node the marquee has already touched (while it is being dragged) gets a
+   dashed outline, like the marquee itself: it is visible that the selection has
+   not been applied yet */
+.sf-node.sf-marked {
+  border-color: var(--accent);
+  border-style: dashed;
+  box-shadow: 0 0 0 2px var(--accent-soft);
+}
+
+.sf-node.sf-conn-source {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 1px var(--accent-soft);
+}
+
+.sf-node.sf-drop-hot {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft), 0 8px 24px rgba(0, 0, 0, 0.45);
+}
+
+.sf-node.sf-invalid { border-color: rgba(232, 105, 122, 0.65); }
+
+/* the run: what is executing now, what has already passed */
+.sf-node.sf-run-active {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 2px var(--accent-soft), 0 0 22px rgba(63, 203, 174, 0.35);
+  animation: sf-pulse 1.1s ease-in-out infinite;
+}
+
+.sf-node.sf-run-paused {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 2px rgba(232, 184, 92, 0.22), 0 0 18px rgba(232, 184, 92, 0.25);
+}
+
+.sf-node.sf-run-done { border-color: rgba(78, 203, 134, 0.45); }
+
+@keyframes sf-pulse {
+  0%, 100% { box-shadow: 0 0 0 2px var(--accent-soft), 0 0 18px rgba(63, 203, 174, 0.25); }
+  50% { box-shadow: 0 0 0 3px var(--accent-soft), 0 0 26px rgba(63, 203, 174, 0.45); }
+}
+.sf-node.sf-invalid .sf-head::after {
+  content: "!";
+  color: var(--danger);
+  font-weight: 700;
+  margin-left: auto;
+  padding-right: 8px;
+}
+
+/* the heights agree with geometry.js: HEAD_H / SUB_H / DESC_H / DATA_ROW_H */
+/* the header: the icon tile, the identifier, the badges; a kind stripe is not
+   needed — the kind is recognised by the tile color and the order inlet */
+.sf-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  height: 30px;
+  padding: 0 12px;
+  padding-top: 4px;
+}
+
+/* the stage / node type icon: a glyph from the docstring or a name monogram */
+.sf-icon {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 7px;
+  font-size: 12px;
+  line-height: 1;
+  font-weight: 600;
+  color: var(--kind-color, var(--ink));
+  background: color-mix(in srgb, var(--kind-color, var(--ink-soft)) 16%, transparent);
+  border: 1px solid color-mix(in srgb, var(--kind-color, var(--ink-soft)) 35%, transparent);
+}
+
+/* an SVG icon: as a picture (its own colors) or as a mask in the node color */
+.sf-icon img {
+  width: 13px;
+  height: 13px;
+  display: block;
+}
+
+.sf-icon.sf-icon-mask::after {
+  content: "";
+  width: 14px;
+  height: 14px;
+  background-color: var(--kind-color, var(--ink));
+  -webkit-mask: var(--icon-url) center / contain no-repeat;
+  mask: var(--icon-url) center / contain no-repeat;
+}
+
+.sf-badges {
+  margin-left: auto;
+  display: flex;
+  gap: 3px;
+  flex-shrink: 0;
+}
+
+.sf-badge {
+  font-size: 11px;
+  line-height: 1;
+  color: var(--ink-soft);
+  cursor: help;
+}
+
+/* the stage description — two lines, then an ellipsis */
+.sf-desc {
+  height: 30px;
+  padding: 0 12px;
+  font-size: 10.5px;
+  line-height: 14px;
+  color: var(--ink-faint);
+  overflow: hidden;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.sf-node-id {
+  font-family: var(--mono);
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sf-entry-badge {
+  flex-shrink: 0;
+  font-size: 9.5px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--ok);
+  background: rgba(78, 203, 134, 0.13);
+  border: 1px solid rgba(78, 203, 134, 0.4);
+  border-radius: 5px;
+  padding: 0 6px;
+  line-height: 15px;
+}
+
+.sf-sub {
+  height: 20px;
+  line-height: 16px;
+  padding: 0 12px 0 45px;
+  font-size: 10.5px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* --- data rows: the input hugs the left edge, the output the right ----- */
+
+.sf-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 20px;
+  padding: 0 9px;
+}
+
+.sf-row-datain { justify-content: flex-start; }
+.sf-row-dataout { justify-content: flex-end; }
+
+/* a settings row: "argument = value". Neither a dot nor a variable color —
+   this is not a data flow but a property of the node itself, so it is paler and
+   has no connector; a long value is trimmed (the full one is in the tooltip) */
+.sf-row-value {
+  gap: 5px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  min-width: 0;
+}
+
+.sf-row-value .sf-row-name { color: var(--ink-soft); flex-shrink: 0; }
+.sf-row-value .sf-row-eq { color: var(--ink-faint); flex-shrink: 0; }
+
+.sf-row-value .sf-row-lit {
+  color: var(--ink-code);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sf-rlabel {
+  font-size: 11px;
+  font-weight: 500;
+  font-family: var(--mono);
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* the arrow inside a row: amber came into the node, green went out of it */
+.sf-arrow-glyph { font-weight: 700; padding-right: 2px; }
+.sf-row-datain .sf-arrow-glyph { color: var(--warn); }
+.sf-row-dataout .sf-arrow-glyph { color: var(--ok); }
+
+/* --- the bottom bar: the order outlets along the edge ------------------ */
+
+.sf-orderbar {
+  display: flex;
+  align-items: stretch;
+  height: 32px;
+  margin-top: 4px;
+  border-top: 1px solid var(--line);
+}
+
+/* the color of the dot is set by canvas.js from the meaning of the port: next
+   is green, then is amber, except is red, a branch or a body takes the color of
+   its area */
+.sf-oport .sf-conn-order { border-color: var(--port-color, var(--ink-soft)); }
+
+.sf-oport {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 2px;
+  padding: 3px 2px 0;
+  border-left: 1px solid var(--line);
+}
+
+.sf-oport:first-child { border-left: none; }
+
+.sf-olabel {
+  font-size: 10.5px;
+  font-weight: 600;
+  line-height: 1.1;
+  color: var(--ink-soft);
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sf-oport-add .sf-olabel { color: var(--ink-faint); }
+
+/* the whole port slot is the handle for a wire, not a 9×9 diamond: hitting a
+   point with the mouse must not be part of the work */
+.sf-oport { cursor: crosshair; }
+.sf-oport:hover { background: var(--accent-soft); }
+.sf-oport:hover .sf-conn-order { box-shadow: 0 0 0 3px var(--accent-soft); }
+
+/* a free port is an invitation to continue the graph: a hollow diamond and a
+   dashed line under the label; an occupied one is filled */
+.sf-oport-free .sf-conn-order { border-style: dashed; }
+.sf-oport-free .sf-olabel { color: var(--ink-faint); }
+
+/* --- connectors: order is a diamond (vertical), data a circle (horizontal) */
+
+.sf-conn {
+  width: 9px;
+  height: 9px;
+  flex-shrink: 0;
+  background: var(--bg);
+  border: 1.5px solid var(--ink-soft);
+}
+
+.sf-conn-order {
+  border-radius: 3px;
+  transform: rotate(45deg);
+}
+
+.sf-conn-data {
+  border-radius: 50%;
+  border-color: var(--var-color, var(--ink-soft));
+  background: color-mix(in srgb, var(--var-color, var(--ink-soft)) 30%, var(--bg));
+}
+
+/* the order inlet — the centre of the top edge, painted in the node kind color */
+.sf-conn-top {
+  position: absolute;
+  top: -5px;
+  left: 50%;
+  transform: translateX(-50%) rotate(45deg);
+  border-color: var(--kind-color, var(--ink-soft));
+  background: color-mix(in srgb, var(--kind-color, var(--ink-soft)) 30%, var(--panel-2));
+}
+
+/* the order outlet — half of it beyond the bottom edge */
+.sf-conn-bottom { margin-bottom: -6px; }
+
+.sf-conn-left { margin-left: -8px; }
+.sf-conn-right { margin-right: -7px; }
+
+.sf-conn-drag { cursor: crosshair; }
+.sf-conn-drag:hover { box-shadow: 0 0 0 3px var(--accent-soft); }
+.sf-conn-order.sf-conn-dashed { border-style: dashed; }
+.sf-oport-add .sf-conn { border-color: var(--ink-faint); }
+
+/* the variable connection menu (a drop onto a node) */
+.sf-menu {
+  position: absolute;
+  z-index: 20;
+  min-width: 190px;
+  background: var(--panel-3);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-card);
+  box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+  padding: 4px;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.sf-menu-title {
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-soft);
+  padding: 4px 8px 5px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 3px;
+}
+
+.sf-menu-hint {
+  font-size: 11px;
+  color: var(--ink-faint);
+  padding: 0 8px 6px;
+}
+
+.sf-menu-search {
+  margin: 0 4px 5px;
+  padding: 5px 8px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font-family: var(--ui);
+  font-size: 12px;
+}
+
+.sf-menu-search:focus { outline: none; border-color: var(--accent); }
+
+.sf-menu-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  max-height: 60vh;
+  overflow-y: auto;
+}
+
+/* a list with a search is capped harder: the stage registry is long and the
+   menu opens under the cursor — it must not cover the whole graph. A menu bar
+   section is short and finite, and there is no reason to hide its last items
+   behind a scroll: they will be reached by eye anyway, not by search */
+.sf-menu-findable .sf-menu-list { max-height: 264px; }
+
+.sf-menu-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: none;
+  border: none;
+  border-radius: 4px;
+  text-align: left;
+  padding: 5px 8px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.sf-menu-item .sf-icon { width: 20px; height: 20px; font-size: 11px; border-radius: 5px; }
+.sf-menu-item .sf-icon img,
+.sf-menu-item .sf-icon.sf-icon-mask::after { width: 12px; height: 12px; }
+
+.sf-menu-text { display: flex; flex-direction: column; min-width: 0; }
+.sf-menu-label { font-family: var(--mono); font-size: 12px; color: var(--ink); }
+
+.sf-menu-sub {
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  max-width: 260px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sf-menu-item:hover,
+.sf-menu-item.sf-menu-active { background: var(--accent-soft); }
+
+.sf-menu-empty { padding: 8px; font-size: 11.5px; color: var(--ink-faint); }
+
+/* the "how to assemble a graph" tips in the panel with nothing selected */
+.sf-tips {
+  margin: 4px 0 0;
+  padding-left: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.sf-tips li::marker { color: var(--ink-faint); }
+
+/* ---------------------------------------------------------- menu bar */
+
+.sf-menubtn {
+  background: none;
+  border: 1px solid transparent;
+  border-radius: 7px;
+  padding: 5px 10px;
+  color: var(--ink-soft);
+  font-family: var(--ui);
+  font-size: 12.5px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.sf-menubtn:hover { background: rgba(255, 255, 255, 0.05); color: var(--ink); }
+
+.sf-menubtn-open {
+  background: var(--accent-soft);
+  border-color: rgba(63, 203, 174, 0.35);
+  color: var(--ink);
+}
+
+/* menu items: the tick, the hotkey, the separator */
+.sf-menu-check {
+  flex: 0 0 12px;
+  color: var(--accent);
+  font-size: 11px;
+  text-align: center;
+}
+
+.sf-menu-key {
+  margin-left: auto;
+  padding-left: 14px;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--ink-faint);
+}
+
+.sf-menu-sep {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--line);
+}
+
+/* a group heading: the three modes of the data layer are a choice from one
+   set, and their labels are short exactly because what they share was moved here */
+.sf-menu-head {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--ink-faint);
+  padding: 4px 8px 3px;
+}
+
+/* focus is held by the menu root (the keyboard), but an outline around the
+   whole list would look like a selection — the active item is highlighted anyway */
+.sf-menu:focus, .sf-menu:focus-visible { outline: none; }
+
+.sf-menu-item:disabled { opacity: 0.4; cursor: default; }
+.sf-menu-item:disabled:hover { background: none; }
+
+/* the run state in the bar — the only thing kept in sight at all times */
+.sf-runstate { display: flex; align-items: center; }
+
+.sf-runstate-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-2);
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  cursor: pointer;
+}
+
+.sf-runstate-node { font-family: var(--mono); color: var(--ink); }
+
+/* -------------------------------------------------------- run dialog */
+
+/* a mismatched key name is the most expensive mistake in the run dialog: the
+   run will go off and fail on the very first "no key" stage */
+.sf-run-warn {
+  margin: 0 0 4px;
+  padding: 7px 9px;
+  border: 1px solid rgba(232, 105, 122, 0.4);
+  border-radius: 7px;
+  background: rgba(232, 105, 122, 0.08);
+  color: var(--ink-soft);
+  font-size: 11.5px;
+  line-height: 1.5;
+}
+
+.sf-run-vars { display: flex; flex-direction: column; gap: 6px; }
+
+.sf-run-var { display: flex; align-items: center; gap: 8px; }
+
+.sf-run-var-name {
+  flex: 0 0 132px;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sf-run-var input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 8px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.sf-run-var input:focus { outline: none; border-color: var(--accent); }
+
+.sf-run-var-kind {
+  flex: 0 0 66px;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  text-align: right;
+}
+
+.sf-run-var-extra { border-top: 1px solid var(--line); padding-top: 8px; }
+
+/* the run pace is a separate row at the bottom: it is not a variable but the
+   way the run will be watched */
+.sf-run-var-pace { border-top: 1px solid var(--line); padding-top: 8px; }
+.sf-run-var-pace .sf-run-var-kind { flex: 0 0 118px; }
+
+.sf-run-var select {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 5px 8px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font-family: var(--ui);
+  font-size: 12px;
+}
+
+.sf-run-var select:focus { outline: none; border-color: var(--accent); }
+
+.sf-run-actions { display: flex; gap: 8px; margin-top: 4px; }
+
+/* ------------------------------------------------------- the secret store */
+
+.sf-secrets {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 34vh;
+  overflow-y: auto;
+}
+
+.sf-secret {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 8px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+}
+
+.sf-secret-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* the mask is always of one length: the number of dots must not even give away
+   whether the key is long or short */
+.sf-secret-value {
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 12px;
+  letter-spacing: 0.08em;
+  color: var(--ink-faint);
+}
+
+.sf-secret-source { flex: 0 0 auto; font-size: 10.5px; color: var(--ink-faint); }
+
+.sf-secret-form { display: flex; align-items: center; gap: 6px; }
+.sf-secret-form .sf-secret-input-name { flex: 0 0 180px; font-family: var(--mono); }
+.sf-secret-form .sf-secret-input-value { flex: 1 1 auto; min-width: 0; }
+
+/* a key field in the inspector: it is visible that a secret is wired in, and
+   not visible which one */
+.sf-var-input.sf-var-secret { color: var(--accent); }
+
+.sf-debug-var-secret .sf-debug-var-value { letter-spacing: 0.08em; }
+
+/* ------------------------------------------------------- the debug panel */
+
+.sf-debug {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  max-height: 34vh;
+  padding: 10px 14px 12px;
+  background: var(--chrome);
+  border-top: 1px solid var(--line-strong);
+}
+
+.sf-debug-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.sf-debug-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid var(--line-strong);
+  background: var(--panel-2);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+}
+
+.sf-debug-glyph { font-size: 11px; }
+.sf-debug-running { border-color: var(--accent); color: var(--accent); }
+.sf-debug-paused { border-color: var(--warn); color: var(--warn); }
+.sf-debug-finished { border-color: var(--ok); color: var(--ok); }
+.sf-debug-failed { border-color: var(--danger); color: var(--danger); }
+
+.sf-debug-node {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink);
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.sf-debug-node:hover { border-color: var(--accent); }
+.sf-debug-error { color: var(--danger); font-size: 11.5px; }
+
+.sf-debug-delay {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11px;
+  color: var(--ink-faint);
+}
+
+.sf-debug-delay input {
+  width: 64px;
+  padding: 3px 6px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 11px;
+}
+
+.sf-debug-body {
+  display: flex;
+  gap: 16px;
+  min-height: 0;
+  flex: 1;
+}
+
+.sf-debug-col { display: flex; flex-direction: column; gap: 6px; min-width: 0; flex: 1 1 42%; }
+.sf-debug-col-log { flex: 1 1 58%; }
+.sf-debug-col-stream { flex: 1 1 50%; }
+
+/* The model answer as it is being written. Monospace and wrapped by words:
+   this is text that is read while it is still arriving. */
+.sf-debug-stream {
+  overflow-y: auto;
+  min-height: 60px;
+  padding: 7px 9px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  color: var(--ink);
+  font-size: 11.5px;
+  line-height: 1.55;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+/* the cursor blinks only while the chunks keep coming: a stopped stream must
+   be visible without reading the status */
+.sf-debug-stream.sf-streaming::after {
+  content: "▍";
+  color: var(--accent);
+  animation: sf-caret 1s steps(2) infinite;
+}
+
+@keyframes sf-caret {
+  0%, 50% { opacity: 1; }
+  50.01%, 100% { opacity: 0; }
+}
+
+.sf-debug-vars,
+.sf-debug-log {
+  overflow-y: auto;
+  min-height: 60px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.sf-debug-var { display: flex; align-items: center; gap: 6px; }
+
+.sf-debug-var-name {
+  flex: 0 0 120px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+input.sf-debug-var-name { flex-basis: 110px; }
+
+.sf-debug-var input {
+  flex: 1 1 auto;
+  min-width: 0;
+  padding: 3px 7px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink-code);
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.sf-debug-var input:focus { outline: none; border-color: var(--accent); }
+.sf-debug-var input:disabled { opacity: 0.6; }
+
+.sf-debug-event {
+  display: flex;
+  gap: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-soft);
+  line-height: 1.5;
+}
+
+.sf-debug-event-type { flex: 0 0 132px; color: var(--ink-faint); }
+.sf-debug-event-node { flex: 0 0 96px; color: var(--ink); }
+
+.sf-debug-event-detail {
+  flex: 1 1 auto;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: var(--ink-code);
+}
+
+.sf-debug-event-node_enter .sf-debug-event-type { color: var(--accent); }
+.sf-debug-event-paused .sf-debug-event-type { color: var(--warn); }
+.sf-debug-event-stage_failed .sf-debug-event-type,
+.sf-debug-event-failed .sf-debug-event-type,
+.sf-debug-event-var_rejected .sf-debug-event-type { color: var(--danger); }
+.sf-debug-event-finished .sf-debug-event-type { color: var(--ok); }
+
+/* ------------------------------------------------------------ inspector */
+
+.sf-inspector {
+  width: 372px;
+  flex-shrink: 0;
+  overflow-y: auto;
+  padding: 18px;
+  background: var(--panel);
+  border-left: 1px solid var(--line);
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.sf-inspector h3 { margin: 0; font-size: 16px; font-weight: 700; }
+
+.sf-kind-text {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  min-width: 0;
+}
+
+.sf-kind-id {
+  font-family: var(--mono);
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.sf-kind-sub {
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-soft);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* the panel header: a large tile of the node kind, then the identifier and the
+   stage */
+.sf-kind-title {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sf-kind-title .sf-icon { width: 36px; height: 36px; font-size: 16px; border-radius: 10px; }
+
+.sf-field { display: flex; flex-direction: column; gap: 6px; }
+.sf-field-inline { flex-direction: row; align-items: center; gap: 8px; }
+
+.sf-field input:not([type="checkbox"]),
+.sf-field select,
+.sf-field textarea,
+.sf-graphsel select {
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 9px 11px;
+  width: 100%;
+  font-size: 12.5px;
+}
+
+.sf-field input:not([type="checkbox"]):focus,
+.sf-field textarea:focus { border-color: rgba(63, 203, 174, 0.5); }
+
+.sf-graphsel select { width: auto; padding: 7px 10px; font-weight: 600; }
+
+.sf-field textarea {
+  font-family: var(--mono);
+  font-size: 12px;
+  resize: vertical;
+}
+
+.sf-field textarea::placeholder, .sf-field input::placeholder { color: var(--ink-faint); }
+
+.sf-cel { font-family: var(--mono); font-size: 12px; }
+
+.sf-json-error { border-color: var(--danger) !important; }
+
+.sf-muted { color: var(--ink-soft); font-size: 12px; margin: 0; }
+
+/* --- panel sections: "what it gets" / "what it gives" / "next" / "more" -- */
+
+.sf-section {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sf-section-title {
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+
+.sf-more {
+  border-top: 1px solid var(--line);
+  padding-top: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sf-more > summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.sf-more > summary::-webkit-details-marker { display: none; }
+.sf-more > summary::before { content: "▸ "; }
+.sf-more[open] > summary::before { content: "▾ "; }
+.sf-more:not([open]) { gap: 0; }
+
+/* the JSON key next to the human label is a hint, not a heading */
+.sf-key-hint {
+  margin-left: 6px;
+  font-family: var(--mono);
+  font-size: 10px;
+  font-weight: 500;
+  text-transform: none;
+  letter-spacing: 0;
+  color: var(--ink-faint);
+}
+
+/* --- stage inputs and outputs by the spec ----------------------------- */
+
+.sf-args { display: flex; flex-direction: column; gap: 8px; }
+
+.sf-args-note {
+  margin-top: 4px;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--ink-faint);
+}
+
+.sf-arg {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 11px 13px;
+  background: var(--panel-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+}
+
+/* declared but unfilled required arguments take the same paint as errors */
+.sf-arg-missing { border-color: rgba(232, 105, 122, 0.45); }
+.sf-arg-off { background: transparent; }
+
+.sf-arg-head {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.sf-arg-name {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.sf-arg-name-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 8px;
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.sf-arg-req { color: var(--danger); font-weight: 700; }
+
+.sf-arg-opt {
+  font-size: 10.5px;
+  color: var(--ink-faint);
+}
+
+.sf-chip {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  border-radius: 5px;
+  padding: 3px 6px;
+}
+
+.sf-arg-head .sf-tag-x { margin-left: auto; }
+
+.sf-arg-hint {
+  font-size: 11px;
+  line-height: 1.4;
+  color: var(--ink-faint);
+}
+
+.sf-arg-line {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.sf-arg-line select,
+.sf-arg-line input:not([type="checkbox"]) {
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+.sf-arg-source { flex: 0 0 auto; }
+.sf-var-input { flex: 1 1 110px; min-width: 0; font-family: var(--mono); }
+
+/* a literal bool argument value is a checkbox, not the text "true" */
+.sf-arg-bool {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  flex-shrink: 0;
+  font-size: 10.5px;
+  color: var(--ink-faint);
+  cursor: pointer;
+}
+
+/* --- the table editor of rows (arguments / outputs / cases / branches) -- */
+
+.sf-rows {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  background: var(--panel-3);
+  padding: 11px 13px;
+}
+
+.sf-rows > summary {
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+
+.sf-rows > summary::-webkit-details-marker { display: none; }
+.sf-rows > summary::before { content: "▸ "; color: var(--ink-faint); }
+.sf-rows[open] > summary::before { content: "▾ "; }
+
+.sf-rows-table {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  margin: 8px 0 6px;
+}
+
+/* a form row wraps if the columns do not fit the panel width */
+.sf-rows-line {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px dashed var(--line);
+}
+
+.sf-rows-line:last-child { border-bottom: none; }
+
+.sf-rows-line input, .sf-rows-line select {
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 6px;
+  min-width: 64px;
+  flex: 1 1 64px;
+  font-size: 12px;
+}
+
+.sf-rows-line input { font-family: var(--mono); }
+
+/* A draft row: created but not complete yet, so it is not in the pipeline JSON.
+   We mark it explicitly — otherwise it is unclear why the node does not "see"
+   its value. */
+.sf-rows-line.sf-rows-draft > input:first-of-type,
+.sf-rows-line.sf-rows-draft > select:first-of-type {
+  border-color: var(--accent, #4fb8e8);
+  border-style: dashed;
+}
+.sf-rows-arrow { color: var(--ink-faint); flex-shrink: 0; text-align: center; }
+
+/* ------------------------------ chips (consume / artifacts) ------------ */
+
+.sf-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  align-items: center;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 5px 6px;
+  min-height: 30px;
+}
+
+.sf-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1px 4px 1px 9px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+}
+
+.sf-tag-x {
+  background: none;
+  border: none;
+  color: var(--ink-faint);
+  cursor: pointer;
+  padding: 0 3px;
+  line-height: 1;
+  font-size: 14px;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+
+.sf-tag-x:hover:not(:disabled) { color: var(--danger); background: rgba(232, 105, 122, 0.12); }
+.sf-tag-x:disabled { opacity: 0.35; cursor: default; }
+
+/* a node name in the group selection summary is a "show this node" button */
+button.sf-tag { cursor: pointer; font-family: var(--mono); }
+button.sf-tag:hover { border-color: var(--accent); color: var(--ink); }
+
+.sf-tag-input {
+  flex: 1;
+  min-width: 90px;
+  background: none !important;
+  border: none !important;
+  padding: 2px !important;
+  font-size: 12px;
+}
+
+/* --------------------------------------------- the stage reference ---- */
+
+.sf-spec {
+  background: var(--panel-3);
+  border: 1px solid var(--line);
+  border-radius: var(--radius-card);
+  padding: 11px 13px;
+}
+
+.sf-spec > summary { cursor: pointer; list-style: none; user-select: none; }
+.sf-spec > summary::-webkit-details-marker { display: none; }
+.sf-spec > summary::before { content: "▸ "; color: var(--ink-faint); }
+.sf-spec[open] > summary::before { content: "▾ "; }
+
+.sf-spec-title { margin-top: 7px; }
+.sf-spec-row { font-size: 12px; }
+.sf-spec-row code { font-family: var(--mono); color: var(--ink); }
+
+.sf-toggle-on {
+  background: var(--accent-soft);
+  border-color: rgba(63, 203, 174, 0.35);
+  color: var(--accent-bright);
+}
+
+/* --------------------------------------------------------- status bar */
+
+.sf-status {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  min-height: 34px;
+  max-height: 96px;
+  overflow-y: auto;
+  flex-wrap: wrap;
+  padding: 5px 18px;
+  background: var(--chrome);
+  border-top: 1px solid var(--line);
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--ink-faint);
+}
+
+.sf-status-ok {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--ok);
+  font-weight: 600;
+}
+
+.sf-status-issue {
+  background: rgba(232, 105, 122, 0.08);
+  border: 1px solid rgba(232, 105, 122, 0.32);
+  border-radius: 7px;
+  color: var(--danger);
+  padding: 3px 10px;
+  cursor: pointer;
+  font-size: 11.5px;
+  font-weight: 600;
+}
+
+.sf-status-issue:hover { background: rgba(232, 105, 122, 0.16); }
+
+/* ------------------------------------------------------------- modals */
+
+.sf-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(10, 11, 13, 0.6);
+  backdrop-filter: blur(2px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+}
+
+.sf-modal {
+  width: min(560px, 92vw);
+  max-height: 84vh;
+  overflow-y: auto;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.5);
+}
+
+.sf-modal-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.sf-modal-title { font-weight: 650; }
+
+.sf-modal-close {
+  background: none;
+  border: none;
+  color: var(--ink-soft);
+  cursor: pointer;
+  padding: 2px 6px;
+  border-radius: 4px;
+}
+
+.sf-modal-close:hover { color: var(--ink); background: var(--panel-2); }
+
+.sf-modal-body {
+  padding: 14px 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.sf-modal-body input:not([type="file"]) {
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 7px 10px;
+}
+
+.sf-modal-area {
+  width: 100%;
+  min-height: 220px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 10px;
+  font-family: var(--mono);
+  font-size: 12px;
+  resize: vertical;
+}
+
+.sf-modal-area-small { min-height: 84px; }
+.sf-modal-row { display: flex; gap: 8px; }
+
+/* --------------------------------------------------- connection screen */
+
+/* The first screen: the editor is static front-end, and the address of the
+   backend is the one thing it cannot guess. It covers everything, because
+   behind it there is nothing yet — an editor with an empty palette and a dead
+   "Run" would read as broken rather than as unconfigured. */
+.sf-connect-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 300;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--bg);
+  font-family: var(--ui);
+  color: var(--ink);
+}
+
+.sf-connect {
+  width: min(460px, 100%);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 26px 26px 22px;
+  background: var(--panel);
+  border: 1px solid var(--line-strong);
+  border-radius: 14px;
+}
+
+.sf-connect-mark {
+  font-size: 22px;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.sf-connect-title {
+  margin: 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: -0.01em;
+}
+
+.sf-connect-lead {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.sf-connect-form {
+  display: flex;
+  gap: 8px;
+  margin-top: 6px;
+}
+
+.sf-connect-input {
+  flex: 1;
+  min-width: 0;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 9px 11px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 13px;
+}
+
+.sf-connect-input:focus {
+  outline: none;
+  border-color: var(--accent);
+}
+
+.sf-connect-btn { white-space: nowrap; }
+
+/* the status line says which of the three it is: waiting, connected, or a
+   reason to type another address */
+.sf-connect-status {
+  font-size: 12px;
+  line-height: 1.5;
+  min-height: 18px;
+}
+
+.sf-connect-wait { color: var(--ink-soft); }
+.sf-connect-ok { color: var(--ok); }
+.sf-connect-bad { color: var(--danger); }
+
+.sf-connect-note {
+  margin-top: 4px;
+  padding-top: 12px;
+  border-top: 1px solid var(--line);
+  color: var(--ink-faint);
+  font-size: 12px;
+  line-height: 1.6;
+}
+
+.sf-connect-note code {
+  font-family: var(--mono);
+  color: var(--ink-soft);
+}
+
+.sf-connect-note a { color: var(--accent); }
+
+.sf-connect-cancel { align-self: flex-start; }

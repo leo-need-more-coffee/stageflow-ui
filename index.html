@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>StageFlow Editor</title>
+  <!-- Manrope for the interface, IBM Plex Mono for identifiers and code;
+       offline the system fallbacks from --ui / --mono take over -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&amp;family=IBM+Plex+Mono:wght@400;500;600&amp;display=swap">
+  <link rel="stylesheet" href="css/editor.css">
+</head>
+<body>
+  <div id="editor"></div>
+  <script type="module">
+    import { connectBackend } from "./js/connect.js";
+    import { createEditor } from "./js/editor.js";
+
+    const storageKey = "stageflow-editor";
+
+    // The editor is static front-end: the stages and the run API live on a
+    // StageFlow backend, and which one that is the user says on the connection
+    // screen. `?backend=http://host:port` skips the question — handy for a
+    // bookmark or a demo; the address is remembered either way.
+    const backend = await connectBackend({
+      storageKey,
+      url: new URLSearchParams(location.search).get("backend"),
+    });
+
+    window.editor = createEditor(document.getElementById("editor"), {
+      backend,
+      // the session survives a reload: the graph, the view and the panel layout
+      storageKey,
+      onChange: (pipeline) => console.debug("pipeline changed", pipeline),
+    });
+  </script>
+</body>
+</html>
