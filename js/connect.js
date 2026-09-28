@@ -84,7 +84,7 @@ export function connectBackend({
     const note = el("div", "sf-connect-note");
     note.append(
       el("span", "", "No backend at hand? "),
-      el("code", "", "python serve.py"),
+      el("code", "", "python main.py"),
       el("span", "", " from "),
       Object.assign(el("a", "", "stageflow-example"), {
         href: "https://github.com/leo-need-more-coffee/stageflow-example",
