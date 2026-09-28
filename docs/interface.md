@@ -145,7 +145,7 @@ inspector:
   icon or the link is broken — a monogram of the name (`IncrementStage` →
   `IS`), so that stages are always distinguishable. Node types have glyphs of
   their own: `▶` entry, `?` condition, `⑂` switch, `⇉` parallel, `▣`
-  subpipeline, `⛑` try, `◉` terminal.
+  subpipeline, `⛑` try, `⟲` map, `◉` terminal.
 
   Foreign SVG never reaches the DOM as markup — only as an `<img>` or a CSS
   mask (`js/icons.js`), so an icon from a third-party stage registry cannot

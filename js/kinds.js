@@ -1127,3 +1127,186 @@ export const TryKind = register(class TryKind extends NodeKind {
     return issues;
   }
 });
+
+// ---------------------------------------------------------------------- map
+
+/** Nodes reachable from `starts` along order edges, not entering `stopAt`.
+ *
+ * `regions.js` walks the graph the same way, but it imports this module, so
+ * importing it back would close a cycle. The walk is four lines; the shared
+ * thing that must not diverge is `orderPorts`, and both use it. */
+function reachableFrom(graph, starts, stopAt = new Set()) {
+  const byId = new Map((graph.nodes ?? []).map((n) => [n.id, n]));
+  const seen = new Set();
+  const queue = [...starts];
+  while (queue.length) {
+    const id = queue.shift();
+    if (!id || seen.has(id) || stopAt.has(id) || !byId.has(id)) continue;
+    seen.add(id);
+    for (const port of kindOf(byId.get(id)).orderPorts(byId.get(id))) {
+      const target = port.get?.();
+      if (target) queue.push(target);
+    }
+  }
+  return seen;
+}
+
+export const MapKind = register(class MapKind extends NodeKind {
+  static type = "map";
+  static title = "Map";
+  static color = "#9dc45f";
+  static glyph = "⟲";
+
+  static description(node) {
+    return node.mode === "parallel"
+      ? "The body runs once per element of the list, all elements at once"
+      : "The body runs once per element of the list, one after another";
+  }
+
+  static defaults(id) {
+    return { id, type: "map", items: "", body: null, item_var: "item", next: null };
+  }
+
+  static subtitle(node) {
+    const items = node.items || "— CEL list —";
+    return `${items} → ${node.item_var || "item"}`;
+  }
+
+  /** A `map` inserted into an edge takes the former target INTO ITS BODY: a
+   * loop is put there to repeat what came next, not to postpone it. */
+  static continuationKey() { return "body"; }
+
+  /** Until there is a body there is nothing to repeat, so the next node goes
+   * into the body; after that a new node continues after the loop. */
+  static appendKey(node) { return node.body ? "next" : "body"; }
+
+  static regionEntries(node) {
+    return node.body ? [node.body] : [];
+  }
+
+  static orderPorts(node) {
+    return [
+      { key: "body", label: "body", human: "loop body",
+        get: () => node.body, set: (v) => { node.body = v; } },
+      { key: "next", label: "next", get: () => node.next, set: (v) => { node.next = v; } },
+    ];
+  }
+
+  /** The list the loop walks. */
+  static dataIns(node) {
+    const ins = celRefs(node.items).map((ref) => ({ label: `⟲ ${ref.name}`, refs: [ref] }));
+    return [...ins, ...super.dataIns(node)];
+  }
+
+  /**
+   * Two sorts of writes, and both belong to the node itself.
+   *
+   * The element and its index exist only inside the body — but the body reads
+   * them, and the loop is what puts them there, so without these ports the
+   * first node of every loop would read a variable nobody writes.
+   *
+   * The collected lists are what the loop leaves behind: one entry per
+   * element, in the order of the items.
+   */
+  static dataOuts(node) {
+    const outs = [{ label: `item → ${node.item_var || "item"}`,
+      variable: { name: node.item_var || "item" } }];
+    if (node.index_var) {
+      outs.push({ label: `index → ${node.index_var}`, variable: { name: node.index_var } });
+    }
+    for (const [src, dst] of Object.entries(node.collect ?? {})) {
+      outs.push({ label: `${src}[] → ${dst}`, variable: { name: dst } });
+    }
+    return [...outs, ...super.dataOuts(node)];
+  }
+
+  static acceptVariable(node, variable) {
+    return [{
+      label: "walk this list",
+      apply: () => { node.items = `vars.${variable.name}`; },
+    }];
+  }
+
+  static fields(node) {
+    return [
+      { kind: "cel", group: "main", label: "list to walk (items, CEL)",
+        get: () => node.items, set: (v) => { node.items = v ?? ""; },
+        placeholder: "vars.tickets" },
+      { kind: "text", group: "out", label: "element → variable (item_var)",
+        get: () => node.item_var ?? "", placeholder: "item",
+        set: (v) => { v?.trim() ? node.item_var = v.trim() : delete node.item_var; } },
+      { kind: "text", group: "out", label: "index → variable (index_var)",
+        get: () => node.index_var ?? "", placeholder: "— not needed —",
+        set: (v) => { v?.trim() ? node.index_var = v.trim() : delete node.index_var; } },
+      { kind: "rows", group: "out", label: "what to take out of an iteration (collect)",
+        columns: [
+          { key: "src", type: "text", placeholder: "variable in the body", width: "110px" },
+          { key: "arrow", type: "label", text: "→", width: "20px" },
+          { key: "dst", type: "text", placeholder: "list outside" },
+        ],
+        get: () => Object.entries(node.collect ?? {}).map(([src, dst]) => ({ src, dst })),
+        set: (rows) => {
+          const out = {};
+          for (const r of rows) if (r.src?.trim() && r.dst?.trim()) out[r.src.trim()] = r.dst.trim();
+          Object.keys(out).length ? node.collect = out : delete node.collect;
+        },
+        incomplete: (r) => !r.src?.trim() || !r.dst?.trim(),
+        blank: () => ({ src: "", dst: "" }) },
+      { kind: "select", group: "main", label: "how to walk (mode)",
+        get: () => node.mode ?? "sequential",
+        set: (v) => { v === "parallel" ? node.mode = "parallel" : delete node.mode; },
+        options: ["sequential", "parallel"] },
+      { kind: "check", group: "more",
+        label: "stop the remaining elements on a failure (cancel_on_error)",
+        get: () => node.cancel_on_error !== false,
+        set: (v) => { v ? delete node.cancel_on_error : node.cancel_on_error = false; } },
+      exposeFieldDesc(node),
+      retryFieldDesc(node),
+    ];
+  }
+
+  static validate(node, graph, pipeline, env) {
+    const issues = super.validate(node, graph, pipeline, env);
+    if (!node.items) issues.push("empty items expression");
+    if (!node.body) issues.push("no entry into the loop body (body) is set");
+    else issues.push(...refIssue(graph, node.body, "body"));
+    issues.push(...refIssue(graph, node.next, "next"));
+
+    const names = [[node.item_var ?? "item", "item_var"]];
+    if (node.index_var) names.push([node.index_var, "index_var"]);
+    for (const [name, field] of names) {
+      if (!/^[^\W\d]\w*$/u.test(name)) issues.push(`${field} '${name}' must be a variable name`);
+    }
+    if (node.index_var && node.index_var === (node.item_var ?? "item")) {
+      issues.push("item_var and index_var are the same name");
+    }
+    for (const [src, dst] of Object.entries(node.collect ?? {})) {
+      for (const name of [src, dst]) {
+        if (!/^[^\W\d]\w*$/u.test(name)) issues.push(`collect '${name}' must be a variable name`);
+      }
+    }
+    issues.push(...this.#escapeIssues(node, graph));
+    return issues;
+  }
+
+  /** The body has to be closed: a road out of it would abandon the elements
+   * still to come, and in parallel mode there would be no single frame to
+   * continue with. The core refuses such a graph, so the editor says it
+   * before the run rather than after. */
+  static #escapeIssues(node, graph) {
+    if (!node.body || !exists(graph, node.body)) return [];
+    const after = node.next ? reachableFrom(graph, [node.next]) : new Set();
+    const members = reachableFrom(graph, [node.body], after);
+    members.delete(node.id);
+    const issues = [];
+    for (const id of [...members].sort()) {
+      const member = (graph.nodes ?? []).find((n) => n.id === id);
+      for (const port of kindOf(member).orderPorts(member)) {
+        const target = port.get?.();
+        if (!target || members.has(target) || !exists(graph, target)) continue;
+        issues.push(`'${id}' leads to '${target}', outside the loop body`);
+      }
+    }
+    return issues;
+  }
+});

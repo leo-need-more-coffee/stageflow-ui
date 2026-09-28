@@ -39,8 +39,8 @@ function writerPorts(graph) {
  * The order edges of the graph: node -> whom it can hand control to.
  *
  * Besides the edges from the JSON this counts the IMPLICIT transitions:
- * leaving an area (`parallel` — branches merging, `try` — the body finishing
- * normally) leads into the owner's `next`, even though there is no such edge
+ * leaving an area (`parallel` — branches merging, `try` and `map` — the body
+ * finishing) leads into the owner's `next`, even though there is no such edge
  * in the pipeline. Without them the last node of a branch would not count as
  * an ancestor of whoever reads its variable after the merge.
  *

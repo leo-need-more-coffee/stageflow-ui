@@ -414,6 +414,10 @@ function normalizeGraph(graph, spacing) {
       node.branches = (node.branches ?? []).map((b) =>
         typeof b === "string" ? { id: b, entry: b } : b);
     }
+    // the same shorthand the core accepts: a list of names means "keep the name"
+    if (node.type === "map" && Array.isArray(node.collect)) {
+      node.collect = Object.fromEntries(node.collect.map((name) => [name, name]));
+    }
     if (!node.metadata.ui) needsLayout = true;
   }
   if (needsLayout) autoLayout(graph, spacing);
@@ -424,8 +428,8 @@ function normalizeGraph(graph, spacing) {
  *
  * - Y gives the execution order: the BFS depth over order edges, top to bottom.
  * - X gives nesting and data flow: every area (the branches of `parallel`, the
- *   body of `try`) gets a COLUMN of its own, and inside a column a node stands
- *   to the right of those whose variables it reads.
+ *   body of `try`, the body of `map`) gets a COLUMN of its own, and inside a
+ *   column a node stands to the right of those whose variables it reads.
  *
  * Columns are not decoration but a guarantee: the frame of an area is drawn
  * around the bounds of its nodes, so an unrelated node that falls inside that

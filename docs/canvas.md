@@ -22,7 +22,8 @@ axes, so that the layers do not get confused by the eye:
 
 **Order connectors** — diamonds, **vertical**: the inlet at the centre of the
 top edge, the outlets as a bar along the bottom one (`next`, `then`/`else`,
-`cases[].next`, `branches[].entry`, `try.body`, `except[].next`). These are the
+`cases[].next`, `branches[].entry`, `try.body`, `except[].next`, `map.body`).
+These are the
 real edges from the JSON, drawn as vertical béziers with an arrowhead — a
 pipeline reads top to bottom, and parallel branches spread left to right. They
 are pulled by the mouse from a port (see below); the `+ case` / `+ branch` /
@@ -42,7 +43,8 @@ The non-obvious reads are counted too: `vars.x` references (and `vars['name']`
 — that is how names CEL cannot parse with a dot are addressed) inside CEL
 expressions (`condition`, `when`, arguments with `.$`, the variables of an
 `entry` node), the `inputs`/`artifact_outputs` of a subpipeline, `expose`, the
-`artifacts` of a terminal, the `except[].result_var` of a try block.
+`artifacts` of a terminal, the `except[].result_var` of a try block, the
+`items` of a map.
 
 Dragging from a data output onto a node opens a "where to connect it" menu (a
 stage argument — with the names from the spec suggested, the `inputs` of a
@@ -111,8 +113,9 @@ nothing to continue the flow with.
 turns A→B into A→N→B, and the former target is picked up by the port through
 which the new node continues the flow. That port is different for every kind
 and declared by the node kind (`continuationKey`): for a stage it is `next`,
-for a `condition` it is `then` (the main road), for a `try` it is `body` — a
-block is put there to protect what came next, not to postpone it. So that the
+for a `condition` it is `then` (the main road), for a `try` and a `map` it is
+`body` — a block is put there to protect what came next, a loop to repeat it,
+neither to postpone it. So that the
 inserted node covers nobody, the band of the canvas below the insertion point
 is spread apart — both the tail of the chain and the unrelated nodes that
 simply stood below move down.
@@ -130,7 +133,8 @@ tail reachable, and the cards do not overlap after an insertion or an append.
 ## Regions
 
 The nodes that own an area are framed with a label: the branches of a
-`parallel`, the body of a `try` block and its `except` handlers. It is visible
+`parallel`, the body of a `try` block and its `except` handlers, the body of a
+`map` loop. It is visible
 which nodes run inside and which run after leaving the area; nested blocks give
 nested frames.
 

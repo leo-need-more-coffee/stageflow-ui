@@ -164,5 +164,24 @@ check("entry: expose works here too",
    outs({ type: "entry", expose: { n: "copy" } })],
   [[["n"]], ["copy"]]);
 
+// ---------------------------------------------------------------- map
+
+check("map: the items expression is the read",
+  ins({ type: "map", items: "vars.tickets", body: "x" }),
+  [["tickets"]]);
+
+check("map: the element is written even when the field is left at its default",
+  outs({ type: "map", items: "vars.tickets", body: "x" }),
+  ["item"]);
+
+check("map: element, index and every collected list are writes",
+  outs({ type: "map", items: "vars.tickets", body: "x", item_var: "ticket",
+         index_var: "i", collect: { reply: "replies", score: "scores" } }),
+  ["ticket", "i", "replies", "scores"]);
+
+check("map: the index form of access is read too",
+  ins({ type: "map", items: "vars['заявки']", body: "x" }),
+  [["заявки"]]);
+
 console.log(failed ? `\nchecks failed: ${failed}` : "node ports: all checks passed");
 process.exit(failed ? 1 : 0);

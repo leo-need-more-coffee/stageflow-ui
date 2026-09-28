@@ -56,9 +56,9 @@ ES modules cannot be loaded from `file://`, so the page has to come over http.
 - **Two kinds of connector on two axes.** Execution order runs vertically and
   is the real `next` of the JSON; data flows run horizontally, are derived from
   the graph, and are coloured per variable.
-- **Regions are derived, not drawn.** The branches of a `parallel` and the body
-  and handlers of a `try` are framed from the structure of the graph, so a
-  frame cannot disagree with it.
+- **Regions are derived, not drawn.** The branches of a `parallel`, the body
+  and handlers of a `try`, the body of a `map` loop are framed from the
+  structure of the graph, so a frame cannot disagree with it.
 - **The inspector comes from the stage spec.** Forms instead of hand-written
   JSON, with unfilled required arguments marked.
 - **Step debugging on the real core**: the current node on the graph, stepping,

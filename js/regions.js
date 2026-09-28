@@ -1,6 +1,7 @@
 /**
  * Regions — visual areas around the nodes that belong to one owner: the
- * branches of `parallel`, the body of `try` and its `except` handlers.
+ * branches of `parallel`, the body of `try` and its `except` handlers, the
+ * body of `map`.
  *
  * There are no regions in the pipeline JSON, and there should not be:
  * membership is derived from the graph — the nodes reachable from the entries

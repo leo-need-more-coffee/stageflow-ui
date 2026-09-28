@@ -19,7 +19,7 @@ let seed = 12345;
 const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
 const pick = (list) => list[Math.floor(rnd() * list.length)];
 
-/** A random pipeline: chains of stage/condition/parallel/try, areas nested. */
+/** A random pipeline: chains of stage/condition/parallel/try/map, areas nested. */
 function randomPipeline(budget) {
   const nodes = [];
   let counter = 0;
@@ -29,7 +29,9 @@ function randomPipeline(budget) {
   const chain = (len, after, depth) => {
     let next = after;
     for (let i = 0; i < len; i += 1) {
-      const kind = depth > 2 ? "stage" : pick(["stage", "stage", "condition", "parallel", "try"]);
+      const kind = depth > 2
+        ? "stage"
+        : pick(["stage", "stage", "condition", "parallel", "try", "map"]);
       if (kind === "condition") {
         nodes.push({ id: id("c"), type: "condition", condition: "vars.v0 > 1",
           then: chain(1 + Math.floor(rnd() * 2), next, depth + 1), else: next });
@@ -39,6 +41,11 @@ function randomPipeline(budget) {
           branches.push({ id: `b${b}`, entry: chain(1 + Math.floor(rnd() * 2), null, depth + 1) });
         }
         nodes.push({ id: id("p"), type: "parallel", branches, next });
+      } else if (kind === "map") {
+        // the body of a loop is closed: its chain leads nowhere, like a branch
+        nodes.push({ id: id("m"), type: "map", items: "vars.v0", item_var: "it",
+          body: chain(1 + Math.floor(rnd() * 2), null, depth + 1),
+          collect: { v1: "v2" }, next });
       } else if (kind === "try") {
         nodes.push({ id: id("t"), type: "try",
           body: chain(1 + Math.floor(rnd() * 2), null, depth + 1),

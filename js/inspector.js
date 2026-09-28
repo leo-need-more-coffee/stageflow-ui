@@ -34,7 +34,9 @@ const GROUPS = [
 ];
 
 /** Human labels for the order ports, keyed by the stable port key: the JSON key
- * itself stays next to it, in small type. */
+ * itself stays next to it, in small type. A kind can override one on the port
+ * itself (`human`) where the shared word does not fit — the body of a loop is
+ * not the body of a block. */
 const PORT_LABELS = {
   next: "onwards", then: "if yes", else: "if no",
   default: "otherwise", body: "block body",
@@ -240,7 +242,7 @@ export class Inspector {
     const ports = kind.orderPorts(node).filter((port) => !port.add && !port.removeItem);
     if (!ports.length) return null;
     const controls = ports.map((port) => {
-      const human = PORT_LABELS[port.key];
+      const human = port.human ?? PORT_LABELS[port.key];
       const label = el("span", "sf-field-label");
       label.append(human ?? port.label);
       if (human) label.append(el("span", "sf-key-hint", port.label));
