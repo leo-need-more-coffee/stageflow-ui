@@ -46,9 +46,12 @@ export class StagesLibrary extends EventTarget {
  * of a subpipeline). */
 export class Validator {
   #stages;
+  #capabilities;
 
-  constructor(stages) {
+  /** @param capabilities what the backend can run (optional; see capabilities.js) */
+  constructor(stages, capabilities = null) {
     this.#stages = stages;
+    this.#capabilities = capabilities;
   }
 
   validate(pipeline, kindOf) {
@@ -76,7 +79,13 @@ export class Validator {
     for (const node of graph.nodes ?? []) {
       if (seen.has(node.id)) push(node.id, "duplicate node id");
       seen.add(node.id);
-      const env = { stages: this.#stages };
+      // said before the run rather than by the run: the backend refuses an
+      // unknown type with "Unknown node type", halfway through and by then
+      // with a frame already half written
+      if (this.#capabilities && !this.#capabilities.supports(node.type)) {
+        push(node.id, this.#capabilities.reason(node.type));
+      }
+      const env = { stages: this.#stages, capabilities: this.#capabilities };
       for (const message of kindOf(node).validate(node, graph, pipeline, env)) {
         push(node.id, message);
       }

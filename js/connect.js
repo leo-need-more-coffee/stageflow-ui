@@ -12,6 +12,7 @@
  * address is remembered, so the question is asked once rather than on every
  * reload.
  */
+import { VERSION } from "./version.js";
 import { Backend, backendStorageKey, normalizeBackendUrl } from "./backend.js";
 import { readJson, writeJson } from "./storage.js";
 
@@ -59,7 +60,9 @@ export function connectBackend({
     const form = el("form", "sf-connect-form");
 
     box.append(el("div", "sf-connect-mark", "◇"));
-    box.append(el("h1", "sf-connect-title", "StageFlow Editor"));
+    const title = el("h1", "sf-connect-title", "StageFlow Editor");
+    title.append(el("span", "sf-connect-version", `v${VERSION}`));
+    box.append(title);
     box.append(el("p", "sf-connect-lead",
       "The editor draws and debugs pipelines, but the stages and the execution "
       + "live on a StageFlow backend. Give it the address of one."));

@@ -1,0 +1,80 @@
+name: release
+
+on:
+  push:
+    tags: ["*"]
+
+permissions:
+  contents: write   # the GitHub Release
+  packages: write   # the image in GHCR
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Tag, package.json and js/version.js must agree
+        run: |
+          tag="${GITHUB_REF_NAME}"
+          pkg=$(node -p "require('./package.json').version")
+          src=$(node --input-type=module -e \
+                  "const m = await import('./js/version.js'); console.log(m.VERSION)")
+          echo "tag=$tag package.json=$pkg js/version.js=$src"
+          test "$tag" = "$pkg" || { echo "::error::tag $tag != package.json $pkg"; exit 1; }
+          test "$tag" = "$src" || { echo "::error::tag $tag != js/version.js $src"; exit 1; }
+      - name: The editor's own tests
+        run: npm test
+
+  release:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Pack what a server needs to serve
+        run: |
+          zip -r "stageflow-ui-${GITHUB_REF_NAME}.zip" \
+            index.html css js server.js package.json LICENSE README.md
+      - uses: softprops/action-gh-release@v2
+        with:
+          files: stageflow-ui-${{ github.ref_name }}.zip
+          generate_release_notes: true
+          body: |
+            Static files: unzip anywhere and serve them, or `node server.js`.
+
+            ```bash
+            docker run --rm -p 8080:8080 ghcr.io/${{ github.repository }}:${{ github.ref_name }}
+            ```
+
+            The editor needs a StageFlow backend; it asks for the address on
+            the connection screen. Which node types it offers is decided by
+            that backend's answer to `GET /api/meta`, so an older backend
+            simply shows the newer nodes greyed out instead of failing a run.
+            See "Compatibility" in the README.
+
+  image:
+    needs: check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - uses: docker/metadata-action@v5
+        id: meta
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=raw,value=latest
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}

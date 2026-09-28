@@ -31,6 +31,8 @@ import { DebugPanel } from "./debugpanel.js";
 import { askRunVars } from "./rundialog.js";
 import { Runner } from "./runner.js";
 import { SecretStore } from "./secrets.js";
+import { BackendCapabilities } from "./capabilities.js";
+import { VERSION } from "./version.js";
 import { StagesLibrary, Validator } from "./stages.js";
 import { EditorStore } from "./storage.js";
 import { Toolbar } from "./toolbar.js";
@@ -107,8 +109,13 @@ export class Editor extends EventTarget {
       : new Backend(options.backend);
     this.model = new PipelineModel(options.spacing);
     this.stages = new StagesLibrary();
+    // which node types the core on that backend can run. Asked once, never
+    // blocking: an older backend serves no /api/meta and then nothing is
+    // known and nothing is marked (see capabilities.js)
+    this.capabilities = new BackendCapabilities();
+    this.capabilities.load(this.backend);
     this.selection = new Selection();
-    this.validator = new Validator(this.stages);
+    this.validator = new Validator(this.stages, this.capabilities);
     this.issues = [];
     // data wires: "off" — hide the layer, "focus" — only for the card under the
     // cursor (and for a highlighted variable), "all" — everything at once
@@ -412,6 +419,8 @@ export class Editor extends EventTarget {
       secrets: this.secrets,
       // the backend an absolute icon path belongs to (see icons.js)
       backend: this.backend,
+      // what that backend can run — the palette dims what it cannot
+      capabilities: this.capabilities,
       // panning and zooming do not change the model, but they do change the
       // session state
       onView: () => this.#persist(),
@@ -513,6 +522,12 @@ export class Editor extends EventTarget {
       this.issues = this.validate();
       this.#renderAll();
     });
+    // the answer arrives after the first paint: revalidate, because a node
+    // the backend cannot run is an issue only once we know it cannot
+    this.capabilities.addEventListener("change", () => {
+      this.issues = this.validate();
+      this.#renderAll();
+    });
     document.addEventListener("keydown", (e) => this.#onKeyDown(e));
   }
 
@@ -603,6 +618,17 @@ export class Editor extends EventTarget {
 
   #renderStatus() {
     this.statusEl.textContent = "";
+    // which backend this is talking to, on the right of the bar: the answer
+    // to "why is the map node greyed out" should not need the console
+    const about = this.capabilities.summary();
+    if (about) {
+      const badge = el("span", "sf-status-backend");
+      badge.textContent = `editor ${VERSION} · ${about}`;
+      badge.title = `${this.backend.url}\n${this.capabilities.known
+        ? `runs: ${this.capabilities.nodeTypes.join(", ")}`
+        : "this backend serves no /api/meta, so the editor cannot tell what it runs"}`;
+      this.statusEl.append(badge);
+    }
     if (!this.issues.length) {
       const ok = el("span", "sf-status-ok");
       ok.textContent = "✓ the graph is valid";

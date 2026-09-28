@@ -4,10 +4,12 @@
 
 **Draw a pipeline, run it on the real core, watch it go node by node.**
 
+[![release](https://img.shields.io/github/v/tag/leo-need-more-coffee/stageflow-ui?label=release)](https://github.com/leo-need-more-coffee/stageflow-ui/releases)
 [![license](https://img.shields.io/badge/license-MIT-green)](LICENSE)
 [![node](https://img.shields.io/badge/node-%E2%89%A518-brightgreen)](package.json)
 [![no dependencies](https://img.shields.io/badge/dependencies-none-blue)](package.json)
 
+[Try it](https://leo-need-more-coffee.github.io/stageflow-ui/) ·
 [Core](https://github.com/leo-need-more-coffee/stageflow) ·
 [Example backend](https://github.com/leo-need-more-coffee/stageflow-example) ·
 [Documentation](https://leo-need-more-coffee.github.io/stageflow/)
@@ -71,6 +73,53 @@ ES modules cannot be loaded from `file://`, so the page has to come over http.
 
 ![Step debugging](docs/img/debugger.png)
 
+## Compatibility
+
+The editor mirrors the core's node registry as it stood when the editor was
+built, so an editor newer than the backend it is pointed at is the normal
+case. It is not guessed from version numbers — the backend is asked:
+
+```
+GET /api/meta  ->  {"api": 1, "stageflow": "0.10.0", "node_types": [...], "stages": 26}
+```
+
+`node_types` is the core's registry. A type missing from it is greyed out in
+the palette with the reason in the tooltip, and a graph already using one says
+so in the status bar **before** a run rather than failing halfway through it
+with `Unknown node type`. The status bar carries the pair, `editor 0.2.0 ·
+core 0.10.0, api v1`.
+
+A backend that serves no `/api/meta` — an older one, or somebody else's — is
+not second-guessed: nothing is marked and everything works as before, because
+a false "unsupported" would be worse than the error being avoided. The status
+bar says the version is unknown.
+
+| Editor | Speaks | Needs |
+|---|---|---|
+| 0.2.x | api v1 | any StageFlow backend; core ≥ 0.10 to offer the `map` node and to be asked at all |
+
+## Releases
+
+A tag builds two things (`.github/workflows/release.yml`): a GitHub Release
+with the static files zipped, and an image in GHCR.
+
+```bash
+docker run --rm -p 8080:8080 ghcr.io/leo-need-more-coffee/stageflow-ui:latest
+```
+
+The hosted demo at
+[leo-need-more-coffee.github.io/stageflow-ui](https://leo-need-more-coffee.github.io/stageflow-ui/)
+is the same files, deployed from `main`. It is served over https, so the
+backend address you give it has to be reachable from a secure page: a local
+backend works in Chrome (the example backend answers the private-network
+preflight), but a browser that blocks it will simply report the backend as
+unreachable — then run the editor locally, which is one command anyway.
+
+The version lives in two places, `package.json` and `js/version.js` (the
+browser cannot read the first, nothing rewrites the second — there is no build
+step); `npm test` fails if they disagree, and so does the release workflow if
+the tag does not match both.
+
 ## Documentation
 
 | Page | What it covers |
@@ -93,8 +142,9 @@ npm test
 They cover what the eye misses: that every node kind has a port for the next
 node, that inserting into an edge keeps the tail of the graph, that 291 random
 layouts produce no overlaps and no foreign node inside a region frame, that
-undo/redo walks real edits only, that pasted copies are independent, and that
-secret values never leave the store.
+undo/redo walks real edits only, that pasted copies are independent, that
+secret values never leave the store, and that an older backend is degraded
+against rather than guessed about.
 
 ## Known limitations
 

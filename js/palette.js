@@ -60,7 +60,14 @@ export class Palette {
       const item = el("button", "sf-palette-item");
       item.style.setProperty("--kind-color", kind.color);
       item.append(paintIcon(el("span", "sf-icon"), kind.glyph), el("span", "", kind.title));
-      item.title = kind.description({}, this.env) || kind.title;
+      // a type the backend cannot run stays on the list, dimmed: hiding it
+      // would answer "why is there no map node" with silence, and the answer
+      // is "your backend is older", which is worth saying
+      const unsupported = this.env.capabilities?.supports(kind.type) === false;
+      if (unsupported) item.classList.add("sf-palette-unsupported");
+      item.title = unsupported
+        ? this.env.capabilities.reason(kind.type)
+        : kind.description({}, this.env) || kind.title;
       this.#wire(item, { type: kind.type }, kind.title, kind.glyph);
       this.host.append(item);
     }

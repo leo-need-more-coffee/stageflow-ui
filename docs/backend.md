@@ -40,6 +40,7 @@ broken rather than as unconfigured.
 ## What the editor asks for
 
 ```
+GET    /api/meta               {api, stageflow, node_types, stages} — optional, see below
 GET    /api/stages             the specs of every registered stage
 GET    /api/secrets            the NAMES of the secrets in the environment
 POST   /api/run                {pipeline, vars, mode: "run"|"step", delay, secrets} -> {id, state}
@@ -57,6 +58,42 @@ fine — the editor simply shows no environment keys (the request failing is not
 treated as an error). Without the run API the editor opens and draws, and
 running fails with the message the backend returned.
 
+## What this backend can run (`/api/meta`)
+
+The editor mirrors the core's node registry as it stood when the editor was
+built. Pointed at an older backend it would offer a node that backend cannot
+execute, and the mismatch used to surface mid-run as `Unknown node type` — a
+message that names neither the cause nor the cure.
+
+A version range cannot answer it either: a backend with a node type of its own
+belongs to no range. So the backend is asked, and answers with the registry:
+
+```json
+{ "api": 1, "stageflow": "0.10.0",
+  "node_types": ["condition", "entry", "map", "parallel", "stage",
+                 "subpipeline", "switch", "terminal", "try"],
+  "stages": 26 }
+```
+
+| Field | Means |
+|---|---|
+| `api` | the version of this HTTP contract; it moves only when an old client would break |
+| `stageflow` | the core's version — for the status bar and the logs, not for branching on |
+| `node_types` | **the field to branch on**: what a pipeline may use here |
+| `stages` | how many stages are registered (the specs are `/api/stages`) |
+
+What the editor does with it: a type absent from `node_types` is greyed out in
+the palette with the reason in its tooltip, and a graph already using one gets
+an issue in the status bar before the run.
+
+The endpoint is optional. A backend that does not serve it is not
+second-guessed — nothing is marked and everything works as before, because a
+false "unsupported" on a good backend is worse than the error being avoided.
+The editor then says the backend version is unknown, and that is all.
+
+In the core the answer comes from `stageflow.capabilities()`, so serving it is
+two lines and it cannot drift from the registry.
+
 ## CORS
 
 The editor is served from its own origin, so every answer needs
@@ -64,6 +101,16 @@ The editor is served from its own origin, so every answer needs
 run requests, which carry a JSON body). Without that the browser blocks the
 requests before they reach the backend, and the connection screen says the
 backend is not reachable — which is what it looks like from the inside.
+
+One more case, and it looks identical from the page: the editor served over
+**https** (the hosted demo) fetching a backend on `127.0.0.1`. Chrome calls
+that a private-network request and sends a preflight carrying
+`Access-Control-Request-Private-Network: true`; unless the answer carries
+`Access-Control-Allow-Private-Network: true`, the request never happens. With
+Starlette that is `allow_private_network=True` on the CORS middleware — the
+example backend sets it. A browser that blocks it regardless leaves one way
+out: serve the editor from the same scheme as the backend, which locally means
+running it yourself.
 
 ## The shape of a stage spec
 

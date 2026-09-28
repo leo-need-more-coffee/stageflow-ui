@@ -9,7 +9,9 @@
  *
  * An example backend lives in a repository of its own
  * (github.com/leo-need-more-coffee/stageflow-example); anything answering the
- * same seven endpoints will do.
+ * same seven endpoints will do. An eighth, `/api/meta`, is optional: it says
+ * which node types that backend's core can run, and without it the editor
+ * simply knows less (see `capabilities.js`).
  */
 
 /**
@@ -51,6 +53,33 @@ export class Backend {
   get runUrl() { return `${this.url}/api/run`; }
 
   get secretsUrl() { return `${this.url}/api/secrets`; }
+
+  get metaUrl() { return `${this.url}/api/meta`; }
+
+  /**
+   * What the backend can run: `{api, stageflow, node_types, stages}`.
+   *
+   * Optional by design. A backend older than the endpoint answers 404, and a
+   * backend written by someone else may never have had it — neither is an
+   * error, both simply mean the editor knows nothing about that end and will
+   * not mark anything as unsupported (see `capabilities.js`).
+   *
+   * @returns the meta object, or null when the backend does not serve one
+   */
+  async fetchMeta(timeout = 5000) {
+    const abort = new AbortController();
+    const timer = setTimeout(() => abort.abort(), timeout);
+    try {
+      const response = await fetch(this.metaUrl, { signal: abort.signal });
+      if (!response.ok) return null;
+      const meta = await response.json();
+      return meta && typeof meta === "object" ? meta : null;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
+    }
+  }
 
   /**
    * An absolute path from a stage spec (`icon: "/icons/globe.svg"`) points at

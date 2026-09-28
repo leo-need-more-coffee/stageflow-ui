@@ -282,6 +282,28 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
    is lost) */
 .sf-palette-item { user-select: none; -webkit-user-drag: none; }
 .sf-palette-item * { pointer-events: none; }
+/* a node type the backend on the other end cannot run: still on the list,
+   and still usable — the graph may be meant for a newer backend — but dimmed
+   and with the reason in the tooltip (see js/capabilities.js) */
+.sf-status-backend {
+  margin-right: auto;      /* the issues stay where they were, on the left of the rest */
+  color: var(--ink-faint, rgba(255, 255, 255, 0.35));
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.sf-connect-version {
+  margin-left: 8px;
+  color: var(--ink-faint, rgba(255, 255, 255, 0.35));
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 400;
+}
+
+.sf-palette-unsupported { opacity: 0.4; }
+.sf-palette-unsupported:hover { opacity: 0.7; }
+
 .sf-palette-stage { font-size: 12px; }
 .sf-palette-stages { display: flex; flex-direction: column; gap: 1px; }
 
