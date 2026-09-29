@@ -285,6 +285,25 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 /* a node type the backend on the other end cannot run: still on the list,
    and still usable — the graph may be meant for a newer backend — but dimmed
    and with the reason in the tooltip (see js/capabilities.js) */
+/* what a run has spent, in the debug panel head. The limited ones warm up
+   as they fill: a ceiling is only useful before it is reached */
+.sf-debug-meter {
+  display: inline-flex;
+  gap: 5px;
+  align-items: baseline;
+  padding: 2px 7px;
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  border-radius: 6px;
+  color: var(--ink-soft);
+  font-family: var(--mono);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.sf-debug-meter-name { color: var(--ink-faint, rgba(255, 255, 255, 0.35)); }
+.sf-debug-meter-high { border-color: rgba(232, 184, 92, 0.45); color: #e8b85c; }
+.sf-debug-meter-full { border-color: rgba(232, 105, 122, 0.55); color: #e8697a; }
+
 .sf-status-backend {
   margin-right: auto;      /* the issues stay where they were, on the left of the rest */
   color: var(--ink-faint, rgba(255, 255, 255, 0.35));

@@ -52,6 +52,8 @@ export function delayLabel(seconds) {
 
 export class Runner extends EventTarget {
   status = "idle";   // idle | running | paused | finished | stopped | failed
+  meters = {};       // what this run has spent so far, by meter
+  meterLimits = {};  // what it is allowed, for the meters that are limited
   runId = null;
   node = null;       // the node we stand on or that is being executed
   vars = {};         // the frame at the stop point
@@ -89,6 +91,7 @@ export class Runner extends EventTarget {
     this.stopStream();
     Object.assign(this, {
       status: "running", node: null, vars: {}, visited: [], log: [],
+      meters: {}, meterLimits: {},
       error: null, result: null, artifacts: null, mode, delay,
       streams: new Map(), streamNode: null, streaming: false,
     });
@@ -140,6 +143,7 @@ export class Runner extends EventTarget {
     this.stopStream();
     Object.assign(this, {
       status: "idle", runId: null, node: null, vars: {}, visited: [], log: [],
+      meters: {}, meterLimits: {},
       error: null, result: null, artifacts: null,
       streams: new Map(), streamNode: null, streaming: false,
     });
@@ -222,6 +226,10 @@ export class Runner extends EventTarget {
         this.artifacts = event.artifacts ?? null;
         if (event.vars) this.vars = event.vars;
         this.stopStream();
+        // the final bill does not arrive in the stream: the events say what
+        // happened, the state says what it cost. One read at the end rather
+        // than a number tacked onto every event
+        this.#refreshState();
         break;
       case "failed":
         this.status = "failed";
@@ -271,7 +279,22 @@ export class Runner extends EventTarget {
     if (state.vars) this.vars = state.vars;
     if (state.mode) this.mode = state.mode;
     if (typeof state.delay === "number") this.delay = state.delay;
+    // what the run has spent, and against what. A backend that counts
+    // nothing sends neither, and then there is nothing to show
+    if (state.meters) this.meters = state.meters;
+    if (state.limits) this.meterLimits = state.limits;
     this.#changed();
+  }
+
+  /** Re-read the run state; used for the totals the event stream omits. */
+  async #refreshState() {
+    if (!this.runId) return;
+    try {
+      const response = await fetch(`${this.base}/${this.runId}`);
+      if (response.ok) this.#apply(await response.json());
+    } catch {
+      // a run whose state cannot be re-read is still a finished run
+    }
   }
 
   async #post(path, payload) {

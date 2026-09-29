@@ -127,6 +127,7 @@ export class DebugPanel {
       this.headEl.append(node);
     }
     if (runner.error) this.headEl.append(el("span", "sf-debug-error", runner.error));
+    for (const chip of this.#meterChips()) this.headEl.append(chip);
     if (runner.status === "finished" && runner.artifacts) {
       const names = Object.keys(runner.artifacts);
       this.headEl.append(el("span", "sf-muted",
@@ -148,6 +149,38 @@ export class DebugPanel {
       this.headEl.append(this.#button("↻", "Run it once more", () => this.env.rerun?.()));
     }
     this.headEl.append(this.#button("✕", "Close the debugger", () => runner.reset()));
+  }
+
+  /**
+   * What the run has spent, next to what it is allowed.
+   *
+   * A ceiling nobody can see is a ceiling you find out about by hitting it,
+   * which is the one moment it is no use. Limited meters come first and
+   * carry their allowance; the rest are shown as plain totals, because a
+   * meter nobody limits is still what the bill is made of.
+   */
+  #meterChips() {
+    const { meters = {}, meterLimits = {} } = this.env.runner;
+    const interesting = Object.keys(meters)
+      .filter((name) => !name.startsWith("peak_") || name in meterLimits)
+      .sort((a, b) => (b in meterLimits) - (a in meterLimits) || a.localeCompare(b));
+    return interesting.map((name) => {
+      const spent = meters[name];
+      const limit = meterLimits[name];
+      const shown = Number.isInteger(spent) ? spent : Number(spent).toFixed(2);
+      const chip = el("span", "sf-debug-meter");
+      chip.append(el("span", "sf-debug-meter-name", name));
+      chip.append(el("span", "", limit === undefined ? `${shown}` : `${shown}/${limit}`));
+      if (limit !== undefined) {
+        const share = limit > 0 ? spent / limit : 1;
+        if (share >= 1) chip.classList.add("sf-debug-meter-full");
+        else if (share >= 0.8) chip.classList.add("sf-debug-meter-high");
+        chip.title = `${name}: ${shown} of ${limit} allowed`;
+      } else {
+        chip.title = `${name}: ${shown}, not limited here`;
+      }
+      return chip;
+    });
   }
 
   #button(label, title, onClick, className = "sf-btn sf-btn-small") {

@@ -128,6 +128,84 @@ check(events === 1, "the answer arrives as one change event (the views redraw on
 check(normalizeBackendUrl("localhost:8765/api") === "http://localhost:8765",
   "the address is normalised the same way for /api/meta as for the rest");
 
+// ------------------------------------------------------ the backend's limits
+
+const PLAN = {
+  api: 1,
+  plan: "basic",
+  stageflow: "0.12.0",
+  node_types: [...OLD_CORE.node_types, "map"],
+  stages: 5,
+  limits: {
+    counters: { seconds: 15, steps: 4 },
+    gauges: { concurrency: 2, depth: 1 },
+    max_retries: 2,
+    max_delay_seconds: 2,
+  },
+};
+
+const planned = new BackendCapabilities();
+planned.setMeta(PLAN);
+
+check(planned.plan === "basic", "the plan name is kept");
+check(planned.counterLimit("steps") === 4, "a counter limit is readable");
+check(planned.counterLimit("tokens") === null, "an unlimited counter reads null");
+check(planned.gaugeLimit("depth") === 1, "a gauge limit is readable");
+check(/plan basic/.test(planned.summary()), "the summary names the plan");
+
+/** A chain of `n` stages between an entry and a terminal. */
+function chain(n, extra = {}) {
+  const nodes = [{ id: "start", type: "entry", variables: {}, next: "s0" }];
+  for (let i = 0; i < n; i += 1) {
+    nodes.push({
+      id: `s${i}`, type: "stage", stage: "S", outputs: { value: "v" },
+      next: i < n - 1 ? `s${i + 1}` : "done", ...(i === 0 ? extra : {}),
+    });
+  }
+  nodes.push({ id: "done", type: "terminal", result: {}, artifacts: ["v"] });
+  return { entry: "start", nodes };
+}
+
+const tooLong = planned.issuesFor(chain(5), kindOf);
+check(tooLong.length === 1 && /shortest way/.test(tooLong[0].message),
+  "a graph longer than the step limit is flagged before the run");
+check(planned.issuesFor(chain(2), kindOf).length === 0,
+  "a graph that fits is not flagged");
+
+// a long road with a short one beside it is judged by the short one: the
+// bound has to be the cheapest path, or working graphs get refused
+const branching = {
+  entry: "start",
+  nodes: [
+    { id: "start", type: "entry", variables: {}, next: "pick" },
+    { id: "pick", type: "condition", condition: "vars.quick", then: "done", else: "s0" },
+    ...chain(10).nodes.slice(1),
+  ],
+};
+check(planned.issuesFor(branching, kindOf).length === 0,
+  "a short way out saves a long graph");
+
+const greedy = planned.issuesFor(
+  chain(2, { retry: [{ error_equals: ["*"], max_attempts: 9, interval_seconds: 30 }] }),
+  kindOf);
+check(greedy.length === 2, "both the attempts and the pause are flagged");
+check(greedy.every((i) => i.node === "s0"), "and they name the node");
+
+check(new BackendCapabilities().issuesFor(chain(50), kindOf).length === 0,
+  "a backend whose limits are unknown is not second-guessed");
+
+const noLimits = new BackendCapabilities();
+noLimits.setMeta(OLD_CORE);
+check(noLimits.issuesFor(chain(50), kindOf).length === 0,
+  "and neither is one that serves no limits");
+check(noLimits.limits === null, "no limits means null, not an empty object");
+
+// the validator passes them through with the rest
+const withPlan = new Validator(stages, planned)
+  .validate(chain(5), kindOf)
+  .filter((i) => /shortest way/.test(i.message));
+check(withPlan.length === 1, "the validator carries a limit issue like any other");
+
 // ------------------------------------------- the released version number
 
 // the browser cannot read package.json and nothing rewrites the constant at

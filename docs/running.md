@@ -96,3 +96,23 @@ The state is assembled from the stream rather than by polling: a debug step is
 an event, and "the node started" must appear on the graph when it happened. The
 commands go as ordinary POSTs: they are initiated by the user, and their answer
 is not needed before the event.
+
+
+## What a run cost
+
+While a run is going and once it has ended, the panel shows the meters the
+backend keeps, against the allowance where there is one:
+
+```
+steps 412/5000    seconds 8.2/120    tokens 5120/200000
+```
+
+They come from the run state rather than from the event stream — the events
+say what happened, the state says what it cost — so the figures refresh on
+every step, pause or resume, and once more when the run ends. A backend that
+counts nothing sends nothing and the panel shows no chips at all.
+
+A meter with no allowance is shown as a plain total: it is not a ceiling, but
+it is what a bill is made of. One that is nearly spent warms up, and one that
+is full turns red — a ceiling is only useful while there is still room to
+notice it.

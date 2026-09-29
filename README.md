@@ -65,6 +65,9 @@ ES modules cannot be loaded from `file://`, so the page has to come over http.
   JSON, with unfilled required arguments marked.
 - **Step debugging on the real core**: the current node on the graph, stepping,
   a pace between nodes, and frame variables you can read and edit mid-run.
+- **It knows what the backend allows.** Node types it cannot run are greyed
+  out, limits it would break are flagged before the run, and a run shows what
+  it spent against what it was given.
 - **Secrets stay out of the JSON.** Only the name of a key goes into the
   pipeline; values live in the store and never appear in the debug panel or
   the event log.
@@ -80,14 +83,27 @@ built, so an editor newer than the backend it is pointed at is the normal
 case. It is not guessed from version numbers — the backend is asked:
 
 ```
-GET /api/meta  ->  {"api": 1, "stageflow": "0.10.0", "node_types": [...], "stages": 26}
+GET /api/meta  ->  {"api": 1, "plan": "basic", "stageflow": "0.12.0",
+                    "node_types": [...], "stages": 5, "limits": {...}}
 ```
 
-`node_types` is the core's registry. A type missing from it is greyed out in
-the palette with the reason in the tooltip, and a graph already using one says
-so in the status bar **before** a run rather than failing halfway through it
-with `Unknown node type`. The status bar carries the pair, `editor 0.2.0 ·
-core 0.10.0, api v1`.
+`node_types` is what this caller may use — the core's registry, narrowed by
+whatever allowance the backend gives the caller. A type missing from it is
+greyed out in the palette with the reason in the tooltip, and a graph already
+using one says so in the status bar **before** a run rather than failing
+halfway through it with `Unknown node type`. The status bar carries the pair,
+`editor 0.3.0 · plan basic, core 0.12.0, api v1`.
+
+`limits` is the other half, and the editor treats it the same way: what can be
+judged from the graph is judged before the run. A graph whose shortest path is
+longer than the allowed `steps`, or a `retry` asking for more attempts than
+the backend permits, is an issue in the status bar rather than a surprise
+partway through. What cannot be judged is left alone — a loop's cost comes
+from its data, and guessing would refuse graphs that fit.
+
+During and after a run the debug panel shows what was spent against what was
+allowed (`steps 412/5000`, `tokens 5120/200000`), which is the point of a
+ceiling: to be visible before it is reached.
 
 A backend that serves no `/api/meta` — an older one, or somebody else's — is
 not second-guessed: nothing is marked and everything works as before, because
@@ -96,7 +112,7 @@ bar says the version is unknown.
 
 | Editor | Speaks | Needs |
 |---|---|---|
-| 0.2.x | api v1 | any StageFlow backend; core ≥ 0.10 to offer the `map` node and to be asked at all |
+| 0.3.x | api v1 | any StageFlow backend; core ≥ 0.10 to be asked what it runs, ≥ 0.12 for the per-caller answer and the limits |
 
 ## Releases
 

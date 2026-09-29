@@ -59,6 +59,11 @@ export class Validator {
     const graphs = [[null, pipeline], ...Object.entries(pipeline.subpipelines ?? {})];
     for (const [key, graph] of graphs) {
       this.#validateGraph(key, graph, pipeline, kindOf, issues);
+      // what the backend's own limits refuse about this graph — said here
+      // rather than by the run, which is the whole point of knowing them
+      for (const issue of this.#capabilities?.issuesFor(graph, kindOf) ?? []) {
+        issues.push({ graph: key, ...issue });
+      }
     }
     return issues;
   }

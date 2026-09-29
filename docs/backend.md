@@ -69,10 +69,12 @@ A version range cannot answer it either: a backend with a node type of its own
 belongs to no range. So the backend is asked, and answers with the registry:
 
 ```json
-{ "api": 1, "stageflow": "0.10.0",
-  "node_types": ["condition", "entry", "map", "parallel", "stage",
-                 "subpipeline", "switch", "terminal", "try"],
-  "stages": 26 }
+{ "api": 1, "plan": "basic", "stageflow": "0.12.0",
+  "node_types": ["condition", "entry", "stage", "switch", "terminal"],
+  "stages": 5,
+  "limits": { "counters": { "seconds": 15, "steps": 200, "iterations": 50 },
+              "gauges": { "concurrency": 2, "depth": 2 },
+              "max_retries": 2, "max_delay_seconds": 2 } }
 ```
 
 | Field | Means |
@@ -80,11 +82,24 @@ belongs to no range. So the backend is asked, and answers with the registry:
 | `api` | the version of this HTTP contract; it moves only when an old client would break |
 | `stageflow` | the core's version — for the status bar and the logs, not for branching on |
 | `node_types` | **the field to branch on**: what a pipeline may use here |
-| `stages` | how many stages are registered (the specs are `/api/stages`) |
+| `stages` | how many stages this caller may use (the specs are `/api/stages`, narrowed the same way) |
+| `plan` | optional, a name for the allowance — shown, never interpreted |
+| `limits` | optional, how much a run may consume |
+
+The answer describes **the caller**, not the backend. Two callers of one
+backend may get different lists, and whether a node type is absent because the
+core is older or because this caller's allowance is narrower is not a
+distinction the editor has to make.
 
 What the editor does with it: a type absent from `node_types` is greyed out in
 the palette with the reason in its tooltip, and a graph already using one gets
 an issue in the status bar before the run.
+
+With `limits` it does the same for what a graph can be judged by without
+running it — a shortest path longer than the allowed `steps`, a `retry` asking
+for more attempts or a longer pause than the backend permits. What cannot be
+judged statically it stays quiet about: a loop's cost comes from its data, and
+guessing would flag graphs that fit.
 
 The endpoint is optional. A backend that does not serve it is not
 second-guessed — nothing is marked and everything works as before, because a
