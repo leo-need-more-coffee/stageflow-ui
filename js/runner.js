@@ -74,14 +74,12 @@ export class Runner extends EventTarget {
   result = null;
   artifacts = null;
 
-  /** @param backend the `Backend` to run on; a bare URL is accepted too, and
-   * then there are no headers to send (tests, an embedding with its own) */
+  /** @param backend the `Backend` to run on — the run URL and the credential
+   * come from it, and nothing here reaches for the global `fetch` */
   constructor(backend) {
     super();
-    this.backend = typeof backend === "string"
-      ? { runUrl: backend, fetch: (url, init) => fetch(url, init) }
-      : backend;
-    this.base = this.backend.runUrl;
+    this.backend = backend;
+    this.base = backend.runUrl;
   }
 
   get active() { return this.status === "running" || this.status === "paused"; }

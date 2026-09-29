@@ -50,7 +50,7 @@ export class BackendCapabilities extends EventTarget {
   get plans() { return this.#plans; }
 
   /** How the plan was arrived at: `"query"` — the editor asked to be shown
-   * this one, `"token"` — it is the caller's own, `"default"` — the backend
+   * this one, `"token"` — it is the caller's own, `"open"` — the backend
    * tells nobody apart. */
   get planSource() { return this.#planSource; }
 

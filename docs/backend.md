@@ -121,7 +121,7 @@ belongs to no range. So the backend is asked, and answers with the registry:
 | `node_types` | **the field to branch on**: what a pipeline may use here |
 | `stages` | how many stages this caller may use (the specs are `/api/stages`, narrowed the same way) |
 | `plan` | optional, a name for the allowance — shown, never interpreted |
-| `plan_source` | optional, how that name was arrived at: `token` / `default` / `query` (see below) |
+| `plan_source` | optional, how that name was arrived at: `token` / `open` / `query` (see below) |
 | `plans` | optional, the plans this backend will answer about, so the editor can offer them without knowing any names |
 | `limits` | optional, how much a run may consume |
 

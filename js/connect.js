@@ -58,11 +58,6 @@ export function storedBackend(storageKey) {
   };
 }
 
-/** The address of the last backend that answered, or "". */
-export function storedBackendUrl(storageKey) {
-  return storedBackend(storageKey).url;
-}
-
 /** What the editor remembers about a backend; one writer, one shape. */
 export function rememberBackend(storageKey, { url, auth, plan }) {
   const key = backendStorageKey(storageKey);

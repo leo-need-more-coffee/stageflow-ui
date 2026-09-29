@@ -76,10 +76,6 @@ check(cleanHeaders({ "X-Api-Key": "k" })["X-Api-Key"] === "k",
     "clearing it sends nothing, rather than sending an empty header");
   check(b.auth.header === "Authorization",
     "…and leaves a name behind, so the field is not blank next time");
-  const embedded = new Backend("x:1", { headers: { "X-Trace": "7" },
-                                        auth: { header: "Authorization", value: "t" } });
-  check(embedded.headers["X-Trace"] === "7" && embedded.headers.Authorization === "t",
-    "an embedder's own headers survive the user editing the credential");
 }
 
 // ------------------------------------------------- https page, http backend
@@ -264,11 +260,6 @@ check(caps.plans === null && caps.planSource === null && !caps.previewing,
   check(sent.some((call) => call.url.includes("/run-1/events")),
     "the event stream goes through the backend too, credential and all");
   runner.stopStream();
-
-  // a Runner handed a bare URL still works: tests and embeddings have no Backend
-  const plain = new Runner("http://b/api/run");
-  check(plain.base === "http://b/api/run" && typeof plain.backend.fetch === "function",
-    "a bare URL is still accepted");
 }
 
 // ------------------------------------------- swapping a credential in place

@@ -59,15 +59,13 @@ export const DEFAULT_AUTH_HEADER = "Authorization";
 
 export class Backend {
   /**
-   * @param url     the address of the backend; normalised on the way in
-   * @param auth    `{header, value}` — the credential, editable in the UI
-   * @param headers anything else to send (an embedding with its own ideas)
-   * @param plan    which plan to be shown, or null for the caller's own
+   * @param url  the address of the backend; normalised on the way in
+   * @param auth `{header, value}` — the credential, editable in the UI
+   * @param plan which plan to be shown, or null for the caller's own
    */
-  constructor(url, { auth = null, headers = {}, plan = null } = {}) {
+  constructor(url, { auth = null, plan = null } = {}) {
     this.url = normalizeBackendUrl(url);
     if (!this.url) throw new Error(`Not a usable backend address: ${url}`);
-    this.extraHeaders = cleanHeaders(headers);
     this.setAuth(auth);
     this.plan = plan || null;
   }
@@ -78,8 +76,9 @@ export class Backend {
    * A pair rather than a free-form header map because that is what a person
    * types into two fields, and because the thing that has to be changeable
    * at any moment — a token that expired halfway through an afternoon — is
-   * exactly this one. Anything more elaborate goes in as `headers` by an
-   * embedder and is not the user's to edit.
+   * exactly this one. Naming the header covers the backends that disagree
+   * about what a credential is called, which was the whole requirement;
+   * carrying several at once was never one.
    */
   setAuth(auth) {
     const header = String(auth?.header ?? "").trim() || DEFAULT_AUTH_HEADER;
@@ -92,7 +91,7 @@ export class Backend {
   get authenticated() { return Boolean(this.auth.value); }
 
   get headers() {
-    return { ...this.extraHeaders, ...cleanHeaders({ [this.auth.header]: this.auth.value }) };
+    return cleanHeaders({ [this.auth.header]: this.auth.value });
   }
 
   /** The same backend seen as another plan — the editor swaps this in live. */
