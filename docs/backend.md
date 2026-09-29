@@ -12,8 +12,15 @@ implementation, and the editor is its client.
 
 A ready-made backend lives in
 [stageflow-example](https://github.com/leo-need-more-coffee/stageflow-example)
-— about two hundred lines of Python on top of the core. Anything answering the
+— a few hundred lines of Python on top of the core. Anything answering the
 same endpoints will do.
+
+This page is the protocol, from the editor's side. Writing a backend rather
+than talking to one is the other side of it, and the core's documentation has
+a five-step track for that:
+[Building a backend](https://leo-need-more-coffee.github.io/stageflow/backend/)
+— the stages, these endpoints, a policy per caller, metering, and who is
+calling.
 
 ## The connection screen
 
