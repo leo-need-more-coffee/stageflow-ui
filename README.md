@@ -10,6 +10,7 @@
 [![no dependencies](https://img.shields.io/badge/dependencies-none-blue)](package.json)
 
 [Try it](https://leo-need-more-coffee.github.io/stageflow-ui/) ·
+[Try it on a live backend](https://leo-need-more-coffee.github.io/stageflow-ui/?backend=https://stageflow.lazy.su) ·
 [Core](https://github.com/leo-need-more-coffee/stageflow) ·
 [Example backend](https://github.com/leo-need-more-coffee/stageflow-example) ·
 [Documentation](https://leo-need-more-coffee.github.io/stageflow/)
@@ -46,6 +47,57 @@ address is remembered, and `?backend=http://host:port` in the URL skips the
 question. A backend that wants a credential gets one from the folded-away
 **Authorization** field on the same screen — header name as well as value,
 because the editor has no business deciding what a credential is called.
+
+## Nothing to run? There is a public one
+
+A small demo backend is up, so the editor has something to talk to without
+installing anything:
+
+**[Open the editor on it →](https://leo-need-more-coffee.github.io/stageflow-ui/?backend=https://stageflow.lazy.su)**
+
+```
+https://stageflow.lazy.su
+```
+
+Seven small stages — count the words in a text, roll dice, write a text out a
+few words at a time as a stream, fail on purpose so `retry` has something to
+retry — plus the seventeen the core ships with. No model and no network, so the
+same graph gives the same answer every time.
+
+Five ready-made graphs are served alongside it. Save one and open it with
+`File → Import JSON…`:
+
+| | Shows |
+|---|---|
+| [`01-text.json`](https://stageflow.lazy.su/pipelines/01-text.json) | a straight line and one `condition` |
+| [`02-typing.json`](https://stageflow.lazy.su/pipelines/02-typing.json) | a stream in the debug panel, and reserve against charge |
+| [`03-dice.json`](https://stageflow.lazy.su/pipelines/03-dice.json) | `parallel` branches, then a `switch` |
+| [`04-retry.json`](https://stageflow.lazy.su/pipelines/04-retry.json) | `retry` getting through, and `try`/`except` catching what does not |
+| [`05-map.json`](https://stageflow.lazy.su/pipelines/05-map.json) | `map` over a list, collecting into lists |
+
+Visitors are anonymous and get a deliberately narrow plan: 30 seconds and 300
+steps a run, four runs going at once across everybody, two per visitor. Paste
+this in the **Authorization** field for a roomier one — every stage, 120
+seconds, 3000 steps:
+
+```
+sf-demo-VrQtWaSG4rffbjZR
+```
+
+It is written here on purpose; there is nothing behind it to protect. Both
+plans are capped, both forget everything when the run ends, and the backend
+holds no secrets and reaches no network — so the worst a graph can do is spend
+its own ceiling. [`&plan=plus`](https://leo-need-more-coffee.github.io/stageflow-ui/?backend=https://stageflow.lazy.su&plan=plus)
+on the editor's own address shows what the wider plan allows **without being on
+it** — the palette opens up, the ceilings change, and a run still goes on the
+plan the credential says. That is the policy mechanism the
+[core documents](https://leo-need-more-coffee.github.io/stageflow/policy/):
+drawing is not running, and a name is not a permission.
+
+If the connection screen says the backend is not reachable, the request is being
+blocked before it leaves the browser — a blocklist, usually. The editor cannot
+tell that apart from the backend being down; the browser's network tab, or
+uBlock's logger, can.
 
 `server.js` is a hundred lines of static file serving with no dependencies:
 ES modules cannot be loaded from `file://`, so the page has to come over http.
