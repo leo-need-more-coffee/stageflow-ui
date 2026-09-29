@@ -61,11 +61,26 @@ export class BackendCapabilities extends EventTarget {
     return this.#nodeTypes === null || this.#nodeTypes.has(type);
   }
 
-  /** Why a node type is not on offer, in words fit for a tooltip. */
+  /**
+   * Why a node type is not on offer, in words fit for a tooltip.
+   *
+   * Careful about the reason given. `/api/meta` answers for the caller, so a
+   * type can be missing because the core is older **or** because this
+   * caller's allowance is narrower — and the answer does not say which. An
+   * earlier version of this message always blamed the core, which read as
+   * nonsense next to a status bar announcing a perfectly recent one.
+   *
+   * So: name the plan when the backend named one, because then the reason is
+   * known and the user can act on it. Otherwise say what is true — this
+   * backend does not offer it — and leave the why alone.
+   */
   reason(type) {
     if (this.supports(type)) return "";
+    if (this.#plan) {
+      return `plan '${this.#plan}' does not include a '${type}' node`;
+    }
     const which = this.#version ? `the backend (core ${this.#version})` : "the backend";
-    return `${which} cannot run a '${type}' node — it needs a newer StageFlow`;
+    return `${which} does not offer a '${type}' node`;
   }
 
   /** One line about the backend for the status bar and the connection screen. */

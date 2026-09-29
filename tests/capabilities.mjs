@@ -56,7 +56,7 @@ function graphWithMap() {
 
 const issuesOf = (caps) => new Validator(stages, caps)
   .validate(graphWithMap(), kindOf)
-  .filter((i) => i.node === "loop" && /cannot run/.test(i.message));
+  .filter((i) => i.node === "loop" && /does not (offer|include)/.test(i.message));
 
 // ------------------------------------------------- a backend that answers
 
@@ -70,6 +70,9 @@ check(old.supports("stage"), "a type the backend lists is supported");
 check(!old.supports("map"), "a type the backend does not list is not supported");
 check(/0\.9\.0/.test(old.reason("map")), "the reason names the version the user has");
 check(/map/.test(old.reason("map")), "the reason names the node type");
+check(!/newer/.test(old.reason("map")),
+  "and claims nothing about why: /api/meta does not say whether the core is "
+  + "old or the allowance narrow");
 check(old.reason("stage") === "", "a supported type has no reason to show");
 check(issuesOf(old).length === 1, "a map node in the graph is an issue on an old backend");
 
@@ -152,6 +155,18 @@ check(planned.counterLimit("steps") === 4, "a counter limit is readable");
 check(planned.counterLimit("tokens") === null, "an unlimited counter reads null");
 check(planned.gaugeLimit("depth") === 1, "a gauge limit is readable");
 check(/plan basic/.test(planned.summary()), "the summary names the plan");
+
+// the reason a node is missing: when the plan is known, it is the plan that
+// is named. Blaming the core would read as nonsense beside a status bar
+// announcing a perfectly recent one — which is exactly how this was found
+const narrow = new BackendCapabilities();
+narrow.setMeta({ ...PLAN, node_types: ["entry", "stage", "terminal"] });
+check(/plan 'basic'/.test(narrow.reason("parallel")),
+  "a narrow plan is named as the reason");
+check(!/newer|older|core/.test(narrow.reason("parallel")),
+  "and the core is not blamed for it");
+check(/parallel/.test(narrow.reason("parallel")), "the node type is named");
+check(narrow.reason("stage") === "", "an allowed type has no reason");
 
 /** A chain of `n` stages between an entry and a terminal. */
 function chain(n, extra = {}) {
