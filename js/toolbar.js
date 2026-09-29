@@ -168,6 +168,9 @@ export class Toolbar {
         apply: () => this.#stagesModal() },
       { label: "Backend…", hint: this.editor.backend.url,
         apply: () => this.#changeBackend() },
+      { label: "Plan…", hint: this.#planHint(),
+        disabled: !this.editor.capabilities.plans,
+        apply: () => this.#planModal() },
       { label: "Secrets…", hint: this.editor.secrets.size
           ? `keys: ${this.editor.secrets.size}` : "API keys outside the JSON",
         apply: () => this.#secretsModal() },
@@ -535,6 +538,59 @@ export class Toolbar {
     }).then((backend) => {
       if (backend && backend.url !== this.editor.backend.url) location.reload();
     });
+  }
+
+  #planHint() {
+    const { capabilities } = this.editor;
+    if (!capabilities.plans) return "the backend serves no plans";
+    return capabilities.previewing
+      ? `previewing ${capabilities.plan}` : capabilities.plan ?? "";
+  }
+
+  /**
+   * Drawing against another plan.
+   *
+   * No reload, unlike changing the backend: the address, the session and the
+   * graph all stay, and only the palette, the limits and therefore the issues
+   * change — which is the thing being looked at. And no pretence that this is
+   * an entitlement: the backend answers about any plan it has, to anyone,
+   * because being shown a plan and being allowed to run on it are two
+   * different questions with two different answers. A graph drawn against a
+   * plan the credential is not on is refused at the start of the run, by name.
+   */
+  #planModal() {
+    const { capabilities } = this.editor;
+    const modal = new Modal("Plan").open();
+    modal.body.append(el("p", "sf-muted",
+      "Which plan the editor draws and validates against: the palette, the "
+      + "limits in the debug panel and the warnings in the status bar all come "
+      + "from it."));
+    modal.body.append(el("p", "sf-muted",
+      "This is a view, not an entitlement. What a run may actually do the "
+      + "backend decides from your credentials; a graph prepared for a plan "
+      + "you are not on is refused when it starts, and says so."));
+
+    const list = el("div", "sf-plan-list");
+    const own = capabilities.previewing ? null : capabilities.plan;
+    // "mine" first: the way back from a preview must not be a name one has to
+    // remember, and the backend will not say which of the names it is
+    const pick = (plan, label, note) => {
+      const row = el("div", "sf-plan-option");
+      if (plan === this.editor.backend.plan
+          || (plan === null && !this.editor.backend.plan)) row.classList.add("sf-on");
+      row.append(el("code", "", label));
+      if (note) row.append(el("span", "sf-muted", note));
+      row.onclick = async () => {
+        modal.close();
+        await this.editor.setPlan(plan);
+      };
+      list.append(row);
+    };
+    pick(null, "mine", own ? `what these credentials are on — ${own}` : "whatever the backend gives");
+    for (const plan of capabilities.plans ?? []) {
+      pick(plan, plan, plan === own ? "the same, asked for by name" : "preview");
+    }
+    modal.body.append(list);
   }
 
   #stagesModal() {

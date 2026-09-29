@@ -12,7 +12,13 @@
  * must appear on the graph when it happened, not on the next polling tick.
  * Commands (step, pause, editing a variable) go as ordinary POSTs — they are
  * initiated by the user, and their answer is not needed before the event.
+ *
+ * Every request here goes through `Backend.fetch`, the event stream included
+ * (see `sse.js` for why that is not an `EventSource`): a backend that wants a
+ * credential wants it on the stream too, and a run that authenticates for its
+ * commands but not for its events is a run that hangs silently.
  */
+import { EventStream } from "./sse.js";
 const LOG_LIMIT = 200; // a debug log, not a server log: more is not needed
 
 /**
@@ -68,10 +74,14 @@ export class Runner extends EventTarget {
   result = null;
   artifacts = null;
 
-  /** @param base the base URL of the run API on the backend (`…/api/run`) */
-  constructor(base) {
+  /** @param backend the `Backend` to run on; a bare URL is accepted too, and
+   * then there are no headers to send (tests, an embedding with its own) */
+  constructor(backend) {
     super();
-    this.base = base;
+    this.backend = typeof backend === "string"
+      ? { runUrl: backend, fetch: (url, init) => fetch(url, init) }
+      : backend;
+    this.base = this.backend.runUrl;
   }
 
   get active() { return this.status === "running" || this.status === "paused"; }
@@ -87,7 +97,8 @@ export class Runner extends EventTarget {
    * Starts a run. `mode: "step"` stops before the very first node — that is
    * what "open the debugger" means: from there on, by steps.
    */
-  async start(pipeline, { mode = "run", delay = 0, vars = {}, secrets = null } = {}) {
+  async start(pipeline, { mode = "run", delay = 0, vars = {}, secrets = null,
+                          plan = null } = {}) {
     this.stopStream();
     Object.assign(this, {
       status: "running", node: null, vars: {}, visited: [], log: [],
@@ -103,7 +114,11 @@ export class Runner extends EventTarget {
       // secret name]} — the backend substitutes the former and scrubs the
       // values of the latter out of the events, so that a key does not come
       // back to the browser through the debug log
-      data = await this.#post("", { pipeline, mode, delay, vars, secrets });
+      // `plan` is what this graph was DRAWN against, not a request to run on
+      // it: the backend resolves the real one from the credential and refuses
+      // the run if the two disagree — which is a better error than a list of
+      // stages that "do not exist"
+      data = await this.#post("", { pipeline, mode, delay, vars, secrets, plan });
     } catch (err) {
       this.status = "failed";
       this.error = String(err.message ?? err);
@@ -159,18 +174,19 @@ export class Runner extends EventTarget {
 
   #listen() {
     this.stopStream();
-    const stream = new EventSource(`${this.base}/${this.runId}/events`);
-    this.stream = stream;
-    stream.onmessage = (e) => {
-      try {
-        this.#event(JSON.parse(e.data));
-      } catch { /* a heartbeat frame or garbage — skip it */ }
-    };
-    // The run is over — the backend closes the stream, and EventSource would go
-    // reconnecting to a finished run. We close it ourselves.
-    stream.onerror = () => {
-      if (!this.active) this.stopStream();
-    };
+    this.stream = new EventStream(`${this.base}/${this.runId}/events`, {
+      fetcher: (url, init) => this.backend.fetch(url, init),
+      onEvent: (event) => this.#event(event),
+      // the stream gave up reconnecting: the run may well be going on, but
+      // this editor has stopped being able to see it, and saying so beats a
+      // debugger that simply stops moving
+      onError: (err) => {
+        if (!this.active) return;
+        this.status = "failed";
+        this.error = `lost the event stream — ${err.message ?? err}`;
+        this.#changed();
+      },
+    });
   }
 
   #event(event) {
@@ -290,7 +306,7 @@ export class Runner extends EventTarget {
   async #refreshState() {
     if (!this.runId) return;
     try {
-      const response = await fetch(`${this.base}/${this.runId}`);
+      const response = await this.backend.fetch(`${this.base}/${this.runId}`);
       if (response.ok) this.#apply(await response.json());
     } catch {
       // a run whose state cannot be re-read is still a finished run
@@ -298,7 +314,7 @@ export class Runner extends EventTarget {
   }
 
   async #post(path, payload) {
-    const response = await fetch(`${this.base}${path}`, {
+    const response = await this.backend.fetch(`${this.base}${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(payload),

@@ -1997,3 +1997,64 @@ button.sf-tag:hover { border-color: var(--accent); color: var(--ink); }
 .sf-connect-note a { color: var(--accent); }
 
 .sf-connect-cancel { align-self: flex-start; }
+
+/* the credential: folded away, because most backends want none */
+.sf-connect-auth {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.sf-connect-auth > summary {
+  cursor: pointer;
+  user-select: none;
+  color: var(--ink-soft);
+}
+
+.sf-connect-auth > summary:hover { color: var(--ink); }
+
+.sf-connect-auth-hint { color: var(--ink-faint); }
+
+.sf-connect-auth-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* the header NAME is the short half: a name, not a token */
+.sf-connect-header { flex: 0 0 34%; }
+
+.sf-connect-auth-note {
+  margin: 8px 0 0;
+  color: var(--ink-faint);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+/* the plan picker in the File menu */
+.sf-plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 10px 0;
+}
+
+.sf-plan-option {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.sf-plan-option:hover { background: var(--well); }
+
+.sf-plan-option.sf-on {
+  border-color: var(--accent);
+  background: var(--well);
+}
+
+.sf-plan-option code { font-family: var(--mono); color: var(--ink); }
+
+.sf-plan-option .sf-muted { font-size: 11px; }

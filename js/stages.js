@@ -33,8 +33,10 @@ export class StagesLibrary extends EventTarget {
     this.dispatchEvent(new Event("change"));
   }
 
-  async loadUrl(url) {
-    const response = await fetch(url);
+  /** @param fetcher `Backend.fetch`, so the credential comes along; the
+   * global one when there is nothing to send */
+  async loadUrl(url, fetcher = fetch) {
+    const response = await fetcher(url);
     if (!response.ok) throw new Error(`${url}: HTTP ${response.status}`);
     this.setSpecs(await response.json(), url);
   }

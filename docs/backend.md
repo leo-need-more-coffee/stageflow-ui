@@ -30,6 +30,15 @@ broken rather than as unconfigured.
   so the question is asked once rather than on every reload. If the remembered
   address stops answering, the screen comes back with the reason.
 - `?backend=http://host:port` in the page URL skips the question.
+- An **Authorization** section, folded away, takes a header — the name as well
+  as the value, because `Authorization: Bearer …`, `X-Api-Key: …` and whatever
+  a gateway reads are all real and the editor has no business picking one. It
+  is sent with every request the editor makes, this check included, so a
+  credential that is wrong is wrong here, on the screen where it can be
+  corrected, rather than at the first run. The editor authenticates nothing
+  itself: it carries what it is given and reports what came back. The value is
+  remembered next to the address, with the same caveat as the
+  [secret store](secrets.md) — it is not encryption.
 - "File" → "Backend…" opens the same screen again; changing the address
   reloads the page. A reload rather than a live swap on purpose: the address is
   the ground everything stands on — the stage registry, a running session, the
@@ -40,10 +49,10 @@ broken rather than as unconfigured.
 ## What the editor asks for
 
 ```
-GET    /api/meta               {api, stageflow, node_types, stages} — optional, see below
+GET    /api/meta               {api, stageflow, node_types, stages, …} — optional, see below
 GET    /api/stages             the specs of every registered stage
 GET    /api/secrets            the NAMES of the secrets in the environment
-POST   /api/run                {pipeline, vars, mode: "run"|"step", delay, secrets} -> {id, state}
+POST   /api/run                {pipeline, vars, mode: "run"|"step", delay, secrets, plan} -> {id, state}
 GET    /api/run/<id>           the state of the run
 GET    /api/run/<id>/events    the event stream (SSE), ?from=N — read on from the Nth
 POST   /api/run/<id>/control   {action: "step"|"resume"|"pause"|"stop"|"delay", count, delay}
@@ -69,7 +78,8 @@ A version range cannot answer it either: a backend with a node type of its own
 belongs to no range. So the backend is asked, and answers with the registry:
 
 ```json
-{ "api": 1, "plan": "basic", "stageflow": "0.12.0",
+{ "api": 1, "plan": "basic", "plan_source": "token", "plans": ["basic", "full", "pro"],
+  "stageflow": "0.12.0",
   "node_types": ["condition", "entry", "stage", "switch", "terminal"],
   "stages": 5,
   "limits": { "counters": { "seconds": 15, "steps": 200, "iterations": 50 },
@@ -84,6 +94,8 @@ belongs to no range. So the backend is asked, and answers with the registry:
 | `node_types` | **the field to branch on**: what a pipeline may use here |
 | `stages` | how many stages this caller may use (the specs are `/api/stages`, narrowed the same way) |
 | `plan` | optional, a name for the allowance — shown, never interpreted |
+| `plan_source` | optional, how that name was arrived at: `token` / `default` / `query` (see below) |
+| `plans` | optional, the plans this backend will answer about, so the editor can offer them without knowing any names |
 | `limits` | optional, how much a run may consume |
 
 The answer describes **the caller**, not the backend. Two callers of one
@@ -109,11 +121,62 @@ The editor then says the backend version is unknown, and that is all.
 In the core the answer comes from `stageflow.capabilities()`, so serving it is
 two lines and it cannot drift from the registry.
 
+## Being shown a plan (`?plan=`)
+
+A backend that serves plans may accept `?plan=<name>` on `/api/meta` and
+`/api/stages`, and then answers about that plan instead of the caller's own.
+"File" → "Plan…" offers whatever `plans` listed, `?plan=basic` on the editor's
+own URL opens it that way, and the status bar marks it `plan basic (preview)`.
+Nothing reloads: the address, the session and the graph stay, and only the
+palette, the limits and therefore the issues change — which is the thing being
+looked at.
+
+**It is unverified, and has to be.** A name is not a permission: drawing is
+not running, and an editor that must authenticate before it can grey out a
+palette entry is an editor nobody configures. So the question "what would this
+graph look like on the cheaper tier" is answerable by anyone.
+
+Which is exactly why the parameter must not exist on the run. `POST /api/run`
+carries `plan` too, but in the opposite direction: it is what the editor
+**drew against**, not a request to run on it. The backend resolves the real
+plan from the credential and refuses a mismatch —
+
+```json
+{ "error": "this graph was prepared for plan 'pro', and these credentials are on 'basic'" }
+```
+
+— which is a better answer than six stages that suddenly "do not exist". A
+backend that instead honoured `?plan=` on the run would be a backend whose
+every ceiling is a query parameter.
+
+None of this is in the StageFlow core. The core takes a `Policy`; tokens,
+headers, tenants and plans belong to the platform, which already has its own
+and would have to fight the framework's. The example backend does it in forty
+lines (`app/auth.py`).
+
+## The event stream is read with `fetch`, not `EventSource`
+
+Worth knowing if you are writing a backend: the editor does **not** use
+`EventSource` for `/api/run/<id>/events`. `EventSource` cannot send headers —
+not "awkwardly", at all — and the usual workaround puts the credential in the
+query string, where it lands in access logs, in the referrer and in the
+history of whoever is screen-sharing.
+
+So the stream is read by hand: an ordinary `fetch` with
+`Accept: text/event-stream`, the body parsed as SSE frames. The wire format is
+unchanged, and a backend needs to do nothing differently. What it does need is
+`?from=N`, which the editor uses to resume after a dropped connection — it
+reconnects at the event after the last one it saw, so a stream that broke
+mid-run loses nothing. (That is also better than what `EventSource` gave us,
+which was a reconnect with no idea where it had got to.)
+
 ## CORS
 
 The editor is served from its own origin, so every answer needs
 `Access-Control-Allow-Origin` (and a `204` to the `OPTIONS` preflight of the
-run requests, which carry a JSON body). Without that the browser blocks the
+run requests, which carry a JSON body). A backend that wants a credential must
+also name that header in `Access-Control-Allow-Headers`, or the browser
+refuses the request before sending it. Without that the browser blocks the
 requests before they reach the backend, and the connection screen says the
 backend is not reachable — which is what it looks like from the inside.
 

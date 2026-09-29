@@ -118,9 +118,9 @@ export class SecretStore extends EventTarget {
    * editor is also opened over static files, and the store must work there too
    * — just without the server source.
    */
-  async loadEnv(url = "/api/secrets") {
+  async loadEnv(url = "/api/secrets", fetcher = fetch) {
     try {
-      const response = await fetch(url);
+      const response = await fetcher(url);
       if (!response.ok) return [];
       const data = await response.json();
       const names = (data?.names ?? []).filter((n) => typeof n === "string" && validSecretName(n));
