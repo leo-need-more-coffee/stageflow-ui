@@ -55,17 +55,44 @@ export function normalizeBackendUrl(raw) {
   return `${url.origin}${path}`;
 }
 
+export const DEFAULT_AUTH_HEADER = "Authorization";
+
 export class Backend {
   /**
    * @param url     the address of the backend; normalised on the way in
-   * @param headers what to send with every request (a credential, usually)
+   * @param auth    `{header, value}` — the credential, editable in the UI
+   * @param headers anything else to send (an embedding with its own ideas)
    * @param plan    which plan to be shown, or null for the caller's own
    */
-  constructor(url, { headers = {}, plan = null } = {}) {
+  constructor(url, { auth = null, headers = {}, plan = null } = {}) {
     this.url = normalizeBackendUrl(url);
     if (!this.url) throw new Error(`Not a usable backend address: ${url}`);
-    this.headers = cleanHeaders(headers);
+    this.extraHeaders = cleanHeaders(headers);
+    this.setAuth(auth);
     this.plan = plan || null;
+  }
+
+  /**
+   * The credential as the interface edits it: one header, name and value.
+   *
+   * A pair rather than a free-form header map because that is what a person
+   * types into two fields, and because the thing that has to be changeable
+   * at any moment — a token that expired halfway through an afternoon — is
+   * exactly this one. Anything more elaborate goes in as `headers` by an
+   * embedder and is not the user's to edit.
+   */
+  setAuth(auth) {
+    const header = String(auth?.header ?? "").trim() || DEFAULT_AUTH_HEADER;
+    const value = String(auth?.value ?? "").trim();
+    this.auth = { header, value };
+    return this;
+  }
+
+  /** Whether there is a credential at all — for "the editor sends nothing". */
+  get authenticated() { return Boolean(this.auth.value); }
+
+  get headers() {
+    return { ...this.extraHeaders, ...cleanHeaders({ [this.auth.header]: this.auth.value }) };
   }
 
   /** The same backend seen as another plan — the editor swaps this in live. */
@@ -143,6 +170,8 @@ export class Backend {
    * stages; throws with a message fit for showing to the user.
    */
   async probe(timeout = 8000) {
+    const blocked = mixedContentProblem(this.url);
+    if (blocked) throw new Error(blocked);
     const abort = new AbortController();
     const timer = setTimeout(() => abort.abort(), timeout);
     let response;
@@ -178,6 +207,39 @@ export class Backend {
     }
     return { stages, count: Object.keys(stages).length };
   }
+}
+
+/**
+ * Why a page served over https cannot reach this address, or "".
+ *
+ * The one failure mode of using the hosted editor against your own backend,
+ * and the one the browser reports worst: a request from an https page to an
+ * http address is not refused by the backend, it never leaves the page.
+ * `fetch` rejects with the same opaque TypeError it gives for a refused
+ * connection, so without this the screen says "the backend is not reachable
+ * (is it running?)" about a backend that is running perfectly well.
+ *
+ * Loopback is the exception the browsers make and the reason the hosted
+ * editor is usable at all: `http://localhost` and `http://127.0.0.1` count
+ * as trustworthy origins and are not blocked as mixed content.
+ */
+export function mixedContentProblem(url) {
+  if (typeof location === "undefined" || location.protocol !== "https:") return "";
+  let host;
+  try {
+    const parsed = new URL(url);
+    if (parsed.protocol !== "http:") return "";
+    host = parsed.hostname;
+  } catch {
+    return "";
+  }
+  if (host === "localhost" || host === "127.0.0.1" || host === "[::1]"
+      || host.endsWith(".localhost")) {
+    return "";
+  }
+  return "this page is served over https, and the browser will not let it "
+    + "reach an http address. Serve the backend over https, or open the "
+    + "editor over http from the same machine.";
 }
 
 /**

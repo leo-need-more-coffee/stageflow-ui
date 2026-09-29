@@ -39,12 +39,39 @@ broken rather than as unconfigured.
   itself: it carries what it is given and reports what came back. The value is
   remembered next to the address, with the same caveat as the
   [secret store](secrets.md) — it is not encryption.
-- "File" → "Backend…" opens the same screen again; changing the address
-  reloads the page. A reload rather than a live swap on purpose: the address is
-  the ground everything stands on — the stage registry, a running session, the
-  names of the environment secrets — and swapping it under a live session would
-  leave a graph built from the stages of one backend with a run belonging to
-  another.
+- `?plan=basic` opens the editor drawn against that plan of that backend.
+
+## The connection dialog
+
+Everything about the connection is reachable while the editor is open, from
+**"File" → "Connection…"** or by clicking the backend line in the status bar
+— the same question as "which backend is this", so the same place. Four
+sections:
+
+- **Backend** — the address, and "Change…", which reopens the connection
+  screen. Changing the address reloads the page. A reload rather than a live
+  swap on purpose: the address is the ground everything stands on — the stage
+  registry, a running session, the names of the environment secrets — and
+  swapping it under a live session would leave a graph built from the stages
+  of one backend with a run belonging to another. Served over https, the
+  section also says why a plain http backend elsewhere cannot be reached (see
+  [CORS](#cors) below), because that failure looks from the page exactly like
+  a backend that is switched off.
+- **Authorization** — the header, editable at any moment. A token is the one
+  connection setting that goes stale *during* the work: it expires, it gets
+  rotated, it turns out to be the wrong tenant's. "Apply" re-asks the three
+  questions and repaints; nothing reloads, because the backend is the same
+  backend and the graph is the same graph. A credential that is refused is
+  reported and **rolled back** — a half-applied token would fail at the next
+  request instead of at this one. An empty value means the editor sends none.
+- **Plan** — see [below](#being-shown-a-plan-plan).
+- **What it answered** — the plan, the core version, the node types and the
+  limits, as they came back.
+
+That is what makes the published editor usable against a backend of your own:
+on a static page nothing can be arranged in advance, so the address, the
+credential and the tier all have to be typed into the interface — and changed
+there when they turn out to be wrong.
 
 ## What the editor asks for
 
@@ -125,8 +152,9 @@ two lines and it cannot drift from the registry.
 
 A backend that serves plans may accept `?plan=<name>` on `/api/meta` and
 `/api/stages`, and then answers about that plan instead of the caller's own.
-"File" → "Plan…" offers whatever `plans` listed, `?plan=basic` on the editor's
-own URL opens it that way, and the status bar marks it `plan basic (preview)`.
+The **Plan** section of the connection dialog offers whatever `plans` listed,
+`?plan=basic` on the editor's own URL opens it that way, and the status bar
+marks it `plan basic (preview)`.
 Nothing reloads: the address, the session and the graph stay, and only the
 palette, the limits and therefore the issues change — which is the thing being
 looked at.

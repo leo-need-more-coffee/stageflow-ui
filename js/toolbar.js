@@ -166,11 +166,8 @@ export class Toolbar {
       { label: "Stage registry…", hint: this.editor.stages.loaded
           ? `loaded: ${this.editor.stages.names().length}` : "not loaded",
         apply: () => this.#stagesModal() },
-      { label: "Backend…", hint: this.editor.backend.url,
-        apply: () => this.#changeBackend() },
-      { label: "Plan…", hint: this.#planHint(),
-        disabled: !this.editor.capabilities.plans,
-        apply: () => this.#planModal() },
+      { label: "Connection…", hint: this.#connectionHint(),
+        apply: () => this.openConnection() },
       { label: "Secrets…", hint: this.editor.secrets.size
           ? `keys: ${this.editor.secrets.size}` : "API keys outside the JSON",
         apply: () => this.#secretsModal() },
@@ -521,8 +518,9 @@ export class Toolbar {
   }
 
   /**
-   * Changing the backend: the same connection screen as at the start, and a
-   * reload afterwards.
+   * Changing the ADDRESS: the same connection screen as at the start, and a
+   * reload afterwards. Reached from the connection dialog, which handles the
+   * credential and the plan itself, in place.
    *
    * A reload rather than a live swap on purpose: the address is not a setting
    * but the ground everything stands on — the stage registry, the running
@@ -535,62 +533,198 @@ export class Toolbar {
       storageKey: this.editor.options.storageKey,
       force: true,
       onCancel: () => {},
-    }).then((backend) => {
-      if (backend && backend.url !== this.editor.backend.url) location.reload();
+    }).then(async (backend) => {
+      if (!backend) return;
+      if (backend.url !== this.editor.backend.url) {
+        location.reload();
+        return;
+      }
+      // the same address with a different credential is not a new backend and
+      // must not be a reload — but it must not be dropped either, which is
+      // what happened while this only compared URLs
+      await this.editor.setCredential(backend.auth).catch(() => {});
     });
   }
 
-  #planHint() {
-    const { capabilities } = this.editor;
-    if (!capabilities.plans) return "the backend serves no plans";
-    return capabilities.previewing
-      ? `previewing ${capabilities.plan}` : capabilities.plan ?? "";
+  #connectionHint() {
+    const { backend, capabilities } = this.editor;
+    const bits = [backend.url.replace(/^https?:\/\//, "")];
+    if (capabilities.plan) {
+      bits.push(capabilities.previewing ? `${capabilities.plan} (preview)` : capabilities.plan);
+    }
+    if (backend.authenticated) bits.push("authorized");
+    return bits.join(" · ");
   }
 
   /**
-   * Drawing against another plan.
+   * The connection: the address, the credential and the plan in one place.
    *
-   * No reload, unlike changing the backend: the address, the session and the
-   * graph all stay, and only the palette, the limits and therefore the issues
-   * change — which is the thing being looked at. And no pretence that this is
-   * an entitlement: the backend answers about any plan it has, to anyone,
-   * because being shown a plan and being allowed to run on it are two
-   * different questions with two different answers. A graph drawn against a
-   * plan the credential is not on is refused at the start of the run, by name.
+   * One dialog rather than three menu items, because they are one question —
+   * "what am I talking to, as whom, and seen how" — and because the editor is
+   * meant to be usable as a published page against somebody else's backend.
+   * On that page nothing can be arranged in advance: the address, the token
+   * and the tier all have to be typed into the interface, and changed there
+   * when they turn out to be wrong.
+   *
+   * Only the address reloads. The credential and the plan are re-asked in
+   * place: the backend is the same backend and the graph is the same graph,
+   * so a reload would lose the work and answer nothing.
    */
-  #planModal() {
-    const { capabilities } = this.editor;
-    const modal = new Modal("Plan").open();
-    modal.body.append(el("p", "sf-muted",
-      "Which plan the editor draws and validates against: the palette, the "
-      + "limits in the debug panel and the warnings in the status bar all come "
-      + "from it."));
-    modal.body.append(el("p", "sf-muted",
-      "This is a view, not an entitlement. What a run may actually do the "
-      + "backend decides from your credentials; a graph prepared for a plan "
-      + "you are not on is refused when it starts, and says so."));
+  openConnection() {
+    const modal = new Modal("Connection").open();
+    // every section reads from the backend and from what it answered, so a
+    // change in one of them makes the others stale — the whole body is drawn
+    // again rather than patched, and `notice` carries the one thing a redraw
+    // would otherwise swallow: what just happened
+    const draw = (notice = null) => {
+      modal.body.textContent = "";
+      this.#connAddress(modal);
+      this.#connAuth(modal, draw, notice);
+      this.#connPlan(modal, draw);
+      this.#connAnswer(modal);
+    };
+    draw();
+    return modal;
+  }
+
+  #connSection(modal, title, aside = null) {
+    const section = el("div", "sf-conn-section");
+    const head = el("div", "sf-conn-head");
+    head.append(el("span", "sf-conn-title", title));
+    if (aside) head.append(aside);
+    section.append(head);
+    modal.body.append(section);
+    return section;
+  }
+
+  #connAddress(modal) {
+    const { backend } = this.editor;
+    const change = this.#button("Change…", () => { modal.close(); this.#changeBackend(); });
+    const section = this.#connSection(modal, "Backend", change);
+    section.append(el("div", "sf-conn-url", backend.url));
+    section.append(el("p", "sf-muted",
+      "Changing the address reloads the page: it is the ground everything "
+      + "stands on — the stage registry, a running session, the names of the "
+      + "environment secrets."));
+    // the one failure of a published editor that the browser reports worst
+    if (typeof location !== "undefined" && location.protocol === "https:") {
+      section.append(el("p", "sf-muted",
+        "This page is served over https, so it can only reach an https "
+        + "backend — or one on localhost, which browsers allow. A plain http "
+        + "address elsewhere is blocked before the request is made, and looks "
+        + "from here exactly like a backend that is switched off."));
+    }
+  }
+
+  #connAuth(modal, redraw, notice) {
+    const { backend } = this.editor;
+    const section = this.#connSection(modal, "Authorization");
+    const row = el("div", "sf-conn-row");
+    const header = el("input", "sf-conn-header");
+    header.type = "text";
+    header.spellcheck = false;
+    header.autocomplete = "off";
+    header.placeholder = "Authorization";
+    header.value = backend.auth.header;
+    const value = el("input");
+    // a password field: a token has no business being on screen while
+    // somebody is demonstrating a graph
+    value.type = "password";
+    value.spellcheck = false;
+    value.autocomplete = "off";
+    value.placeholder = backend.authenticated ? "•••••• (unchanged)" : "Bearer …";
+    value.value = backend.auth.value;
+    const apply = this.#button("Apply", () => submit(), "sf-btn sf-primary");
+    row.append(header, value, apply);
+    section.append(row);
+
+    const say = el("div", "sf-conn-say");
+    section.append(say);
+    const said = (text, kind) => {
+      say.textContent = text;
+      say.className = `sf-conn-say sf-conn-${kind}`;
+    };
+    if (notice) said(notice.text, notice.kind);
+
+    const submit = async () => {
+      apply.disabled = true;
+      said("Checking…", "wait");
+      try {
+        const count = await this.editor.setCredential({
+          header: header.value, value: value.value,
+        });
+        // the plan, the node types and the limits all just changed with it
+        redraw({ kind: "ok", text: value.value.trim()
+          ? `Accepted: ${count} stages.`
+          : `Credential cleared: ${count} stages without one.` });
+      } catch (err) {
+        said(`${err.message ?? err} — the previous credential is still in use.`, "bad");
+        apply.disabled = false;
+      }
+    };
+    value.onkeydown = (e) => { if (e.key === "Enter") submit(); };
+    header.onkeydown = (e) => { if (e.key === "Enter") submit(); };
+
+    section.append(el("p", "sf-muted",
+      "Sent with every request the editor makes. The name is a field because "
+      + "backends disagree — Authorization, X-Api-Key, whatever a gateway "
+      + "reads — and the editor authenticates nothing itself: it carries what "
+      + "it is given. Empty means it sends none. Kept in this browser's "
+      + "localStorage; treat it like the secret store, not like encryption."));
+  }
+
+  #connPlan(modal, redraw) {
+    const { capabilities, backend } = this.editor;
+    if (!capabilities.plans) return;
+    const section = this.#connSection(modal, "Plan");
+    section.append(el("p", "sf-muted",
+      "What the editor draws and validates against: the palette, the limits "
+      + "in the debug panel and the warnings in the status bar. A view, not an "
+      + "entitlement — what a run may do the backend decides from your "
+      + "credentials, and a graph prepared for a plan you are not on is "
+      + "refused when it starts, by name."));
 
     const list = el("div", "sf-plan-list");
     const own = capabilities.previewing ? null : capabilities.plan;
-    // "mine" first: the way back from a preview must not be a name one has to
-    // remember, and the backend will not say which of the names it is
     const pick = (plan, label, note) => {
       const row = el("div", "sf-plan-option");
-      if (plan === this.editor.backend.plan
-          || (plan === null && !this.editor.backend.plan)) row.classList.add("sf-on");
+      if ((plan ?? null) === backend.plan) row.classList.add("sf-on");
       row.append(el("code", "", label));
       if (note) row.append(el("span", "sf-muted", note));
       row.onclick = async () => {
-        modal.close();
         await this.editor.setPlan(plan);
+        redraw();
       };
       list.append(row);
     };
-    pick(null, "mine", own ? `what these credentials are on — ${own}` : "whatever the backend gives");
-    for (const plan of capabilities.plans ?? []) {
+    // "mine" first: the way back from a preview must not be a name one has to
+    // remember, and the backend will not say which of the names it is
+    pick(null, "mine",
+         own ? `what these credentials are on — ${own}` : "whatever the backend gives");
+    for (const plan of capabilities.plans) {
       pick(plan, plan, plan === own ? "the same, asked for by name" : "preview");
     }
-    modal.body.append(list);
+    section.append(list);
+  }
+
+  #connAnswer(modal) {
+    const { capabilities } = this.editor;
+    if (!capabilities.probed) return;
+    const section = this.#connSection(modal, "What it answered");
+    if (!capabilities.known) {
+      section.append(el("p", "sf-muted",
+        "This backend serves no /api/meta, so the editor cannot tell what it "
+        + "runs — and does not guess: nothing is marked unsupported."));
+      return;
+    }
+    section.append(el("div", "sf-conn-url", capabilities.summary()));
+    section.append(el("p", "sf-muted", `runs: ${capabilities.nodeTypes.join(", ")}`));
+    const counters = Object.entries(capabilities.limits?.counters ?? {});
+    const gauges = Object.entries(capabilities.limits?.gauges ?? {});
+    if (counters.length || gauges.length) {
+      section.append(el("p", "sf-muted", "limits: " + [...counters, ...gauges]
+        .map(([name, value]) => `${name} ${value}`).join(", ")));
+    }
   }
 
   #stagesModal() {

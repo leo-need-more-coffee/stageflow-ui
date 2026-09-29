@@ -108,7 +108,8 @@ During and after a run the debug panel shows what was spent against what was
 allowed (`steps 412/5000`, `tokens 5120/200000`), which is the point of a
 ceiling: to be visible before it is reached.
 
-"File" → "Plan…" draws the graph against another plan of the same backend
+The **Plan** section of the connection dialog draws the graph against another
+plan of the same backend
 (`?plan=` on `/api/meta` and `/api/stages`; `?plan=basic` on the editor's URL
 opens it that way). That is a **view** — unverified on purpose, because a name
 is not a permission and an editor that must log in before it can grey out a
@@ -138,11 +139,17 @@ docker run --rm -p 8080:8080 ghcr.io/leo-need-more-coffee/stageflow-ui:latest
 
 The hosted demo at
 [leo-need-more-coffee.github.io/stageflow-ui](https://leo-need-more-coffee.github.io/stageflow-ui/)
-is the same files, deployed from `main`. It is served over https, so the
-backend address you give it has to be reachable from a secure page: a local
-backend works in Chrome (the example backend answers the private-network
-preflight), but a browser that blocks it will simply report the backend as
-unreachable — then run the editor locally, which is one command anyway.
+is the same files, deployed from `main`, and it is a full client rather than a
+demonstration: point it at a backend of your own, give it a credential, pick a
+plan, all from the interface — "File" → "Connection…", or click the backend
+line in the status bar. Nothing is configured at build time, because on a
+static page nothing can be.
+
+It is served over https, so the backend has to be reachable from a secure
+page: `https://…`, or loopback, which browsers allow (the example backend
+answers Chrome's private-network preflight). A plain http address elsewhere is
+blocked before the request is made — the dialog says so rather than letting it
+read as a backend that is switched off.
 
 The version lives in two places, `package.json` and `js/version.js` (the
 browser cannot read the first, nothing rewrites the second — there is no build

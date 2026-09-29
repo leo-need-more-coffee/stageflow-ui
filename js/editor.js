@@ -252,12 +252,49 @@ export class Editor extends EventTarget {
     this.#renderAll();
   }
 
-  /** The plan lives with the address it belongs to (see `connect.js`). */
+  /**
+   * Change the credential without leaving the session.
+   *
+   * A token is the one connection setting that goes stale *during* the work:
+   * it expires, it gets rotated, it turns out to be the wrong tenant's. The
+   * address is the ground everything stands on and changing it reloads the
+   * page; the credential is not — the backend is the same backend, the graph
+   * is the same graph, and only the answers change. So this re-asks the three
+   * questions and repaints, and a reload would only lose the work.
+   *
+   * Throws with a message fit for showing if the new credential does not
+   * work; the old one is put back, because a half-applied credential is a
+   * session that fails at the next request instead of at this one.
+   */
+  async setCredential(auth) {
+    const previous = this.backend.auth;
+    this.backend.setAuth(auth);
+    let probe;
+    try {
+      probe = await this.backend.probe();
+    } catch (err) {
+      this.backend.setAuth(previous);
+      throw err;
+    }
+    this.#persistBackend();
+    // the probe already fetched the registry — asking twice would be a second
+    // round trip to learn the same thing
+    this.stages.setSpecs(probe.stages, this.backend.stagesUrl);
+    await this.capabilities.load(this.backend);
+    this.secrets.loadEnv(this.backend.secretsUrl,
+                         (url, init) => this.backend.fetch(url, init));
+    this.issues = this.validate();
+    this.#renderAll();
+    return probe.count;
+  }
+
+  /** The credential and the plan live with the address they belong to. */
   #persistBackend() {
     const key = this.options.storageKey;
     if (!key) return;
     const saved = readJson(backendStorageKey(key)) ?? {};
     writeJson(backendStorageKey(key), { ...saved, url: this.backend.url,
+                                        auth: this.backend.auth,
                                         plan: this.backend.plan });
   }
 
@@ -660,8 +697,11 @@ export class Editor extends EventTarget {
     // to "why is the map node greyed out" should not need the console
     const about = this.capabilities.summary();
     if (about) {
-      const badge = el("span", "sf-status-backend");
+      // a button, not a label: "which backend is this" and "where do I put
+      // the token" are one question, and the bar is where it gets asked
+      const badge = el("button", "sf-status-backend");
       badge.textContent = `editor ${VERSION} · ${about}`;
+      badge.onclick = () => this.toolbar.openConnection();
       const lines = [this.backend.url];
       if (this.capabilities.previewing) {
         lines.push(`showing plan '${this.capabilities.plan}' — a preview; `
@@ -670,6 +710,7 @@ export class Editor extends EventTarget {
       lines.push(this.capabilities.known
         ? `runs: ${this.capabilities.nodeTypes.join(", ")}`
         : "this backend serves no /api/meta, so the editor cannot tell what it runs");
+      lines.push("click to change the backend, the credential or the plan");
       badge.title = lines.join("\n");
       this.statusEl.append(badge);
     }

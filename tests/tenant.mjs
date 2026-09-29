@@ -17,7 +17,7 @@
  *
  * Run: node tests/tenant.mjs
  */
-import { Backend, cleanHeaders } from "../js/backend.js";
+import { Backend, cleanHeaders, mixedContentProblem } from "../js/backend.js";
 import { BackendCapabilities } from "../js/capabilities.js";
 import { EventStream } from "../js/sse.js";
 import { Runner } from "../js/runner.js";
@@ -63,6 +63,42 @@ check(!("X" in cleanHeaders({ X: "   " })), "an empty value is not a header");
 check(cleanHeaders({ "X-Api-Key": "k" })["X-Api-Key"] === "k",
   "the name is not assumed to be Authorization");
 
+// ----------------------------------------------------- the credential pair
+
+{
+  const b = new Backend("x:1", { auth: { header: " X-Api-Key ", value: " k " } });
+  check(b.headers["X-Api-Key"] === "k", "the credential is a header the user named");
+  check(b.authenticated, "…and the editor knows it is sending one");
+  b.setAuth({ header: "", value: "tok" });
+  check(b.headers.Authorization === "tok", "an unnamed header falls back to Authorization");
+  b.setAuth(null);
+  check(Object.keys(b.headers).length === 0 && !b.authenticated,
+    "clearing it sends nothing, rather than sending an empty header");
+  check(b.auth.header === "Authorization",
+    "…and leaves a name behind, so the field is not blank next time");
+  const embedded = new Backend("x:1", { headers: { "X-Trace": "7" },
+                                        auth: { header: "Authorization", value: "t" } });
+  check(embedded.headers["X-Trace"] === "7" && embedded.headers.Authorization === "t",
+    "an embedder's own headers survive the user editing the credential");
+}
+
+// ------------------------------------------------- https page, http backend
+
+{
+  const real = globalThis.location;
+  globalThis.location = { protocol: "https:" };
+  check(/https/.test(mixedContentProblem("http://api.example.com")),
+    "the hosted editor says why an http backend is unreachable…");
+  check(mixedContentProblem("http://127.0.0.1:8765") === "",
+    "…and does not say it about loopback, which browsers allow");
+  check(mixedContentProblem("http://localhost:8765") === "", "nor about localhost by name");
+  check(mixedContentProblem("https://api.example.com") === "", "nor about https");
+  globalThis.location = { protocol: "http:" };
+  check(mixedContentProblem("http://api.example.com") === "",
+    "an editor served over http reaches http backends and says nothing");
+  globalThis.location = real;
+}
+
 // --------------------------------------------------------- the one door
 
 const calls = [];
@@ -72,7 +108,7 @@ globalThis.fetch = async (url, init = {}) => {
 };
 
 const backend = new Backend("localhost:8765", {
-  headers: { Authorization: "Bearer tok" }, plan: "pro",
+  auth: { header: "Authorization", value: "Bearer tok" }, plan: "pro",
 });
 
 check(backend.metaUrl.endsWith("/api/meta?plan=pro"), "?plan= goes on /api/meta");
@@ -233,6 +269,45 @@ check(caps.plans === null && caps.planSource === null && !caps.previewing,
   const plain = new Runner("http://b/api/run");
   check(plain.base === "http://b/api/run" && typeof plain.backend.fetch === "function",
     "a bare URL is still accepted");
+}
+
+// ------------------------------------------- swapping a credential in place
+
+{
+  // a token that stops working must not take the session with it
+  let accept = false;
+  const b = new Backend("localhost:8765", { auth: { header: "A", value: "good" } });
+  globalThis.fetch = async (url, init = {}) => (
+    (init.headers ?? {}).A === "good" || accept
+      ? { ok: true, status: 200, json: async () => ({ stages: { S: {} } }) }
+      : { ok: false, status: 401, json: async () => ({ error: "nope" }) });
+  const editor = {
+    backend: b,
+    applied: null,
+    async setCredential(auth) {   // the shape editor.js implements, in miniature
+      const previous = b.auth;
+      b.setAuth(auth);
+      try {
+        return (await b.probe()).count;
+      } catch (err) {
+        b.setAuth(previous);
+        throw err;
+      }
+    },
+  };
+  let refused = "";
+  try {
+    await editor.setCredential({ header: "A", value: "bad" });
+  } catch (err) {
+    refused = err.message;
+  }
+  check(/nope/.test(refused), "a credential that is refused is reported as refused");
+  check(b.auth.value === "good",
+    "…and the working one is put back: a half-applied token fails at the NEXT request");
+  accept = true;
+  check(await editor.setCredential({ header: "A", value: "fresh" }) === 1,
+    "a credential that works is applied without a reload");
+  check(b.auth.value === "fresh", "and kept");
 }
 
 console.log(failed

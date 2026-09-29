@@ -310,6 +310,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   font-family: var(--mono);
   font-size: 11px;
   white-space: nowrap;
+  /* a button that has to keep reading as a status line until it is wanted */
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
+.sf-status-backend:hover {
+  color: var(--ink-soft);
+  border-color: var(--line);
 }
 
 .sf-connect-version {
@@ -2029,6 +2040,69 @@ button.sf-tag:hover { border-color: var(--accent); color: var(--ink); }
   font-size: 11px;
   line-height: 1.6;
 }
+
+/* the connection dialog: address, credential, plan */
+.sf-conn-section {
+  margin: 0 0 18px;
+}
+
+.sf-conn-section:last-child { margin-bottom: 0; }
+
+.sf-conn-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.sf-conn-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.sf-conn-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sf-conn-row input {
+  flex: 1;
+  min-width: 0;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.sf-conn-row input:focus { outline: none; border-color: var(--accent); }
+
+.sf-conn-header { flex: 0 0 32%; }
+
+.sf-conn-url {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.sf-conn-say {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  min-height: 15px;
+}
+
+.sf-conn-ok { color: var(--ok); }
+.sf-conn-bad { color: var(--danger); }
+.sf-conn-wait { color: var(--ink-soft); }
 
 /* the plan picker in the File menu */
 .sf-plan-list {

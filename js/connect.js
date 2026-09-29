@@ -21,11 +21,12 @@
  * at the first run.
  */
 import { VERSION } from "./version.js";
-import { Backend, backendStorageKey, cleanHeaders, normalizeBackendUrl } from "./backend.js";
+import {
+  Backend, DEFAULT_AUTH_HEADER, backendStorageKey, normalizeBackendUrl,
+} from "./backend.js";
 import { readJson, writeJson } from "./storage.js";
 
 const EXAMPLE_URL = "http://127.0.0.1:8765";
-const DEFAULT_AUTH_HEADER = "Authorization";
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -62,14 +63,10 @@ export function storedBackendUrl(storageKey) {
   return storedBackend(storageKey).url;
 }
 
-function rememberBackend(storageKey, { url, auth, plan }) {
+/** What the editor remembers about a backend; one writer, one shape. */
+export function rememberBackend(storageKey, { url, auth, plan }) {
   const key = backendStorageKey(storageKey);
   if (key) writeJson(key, { url, auth, plan: plan ?? null });
-}
-
-/** A header pair as the thing `Backend` takes: `{}` when there is none. */
-function headersOf(auth) {
-  return cleanHeaders({ [auth.header || DEFAULT_AUTH_HEADER]: auth.value });
 }
 
 /**
@@ -206,11 +203,9 @@ export function connectBackend({
       input.disabled = true;
       say(`Connecting to ${address}…`, "wait");
       try {
-        const backend = new Backend(address, {
-          headers: headersOf(credential), plan: shownPlan,
-        });
+        const backend = new Backend(address, { auth: credential, plan: shownPlan });
         const { count } = await backend.probe();
-        rememberBackend(storageKey, { url: backend.url, auth: credential,
+        rememberBackend(storageKey, { url: backend.url, auth: backend.auth,
                                       plan: backend.plan });
         say(`Connected: ${count} stages.`, "ok");
         overlay.remove();
