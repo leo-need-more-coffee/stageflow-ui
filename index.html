@@ -23,9 +23,16 @@
     // StageFlow backend, and which one that is the user says on the connection
     // screen. `?backend=http://host:port` skips the question — handy for a
     // bookmark or a demo; the address is remembered either way.
+    //
+    // `?plan=basic` asks that backend to answer about that plan instead of
+    // this caller's own: a link that opens the editor as the cheaper tier
+    // sees it. It changes what is DRAWN, never what a run is allowed — that
+    // the backend decides from the credential, and refuses a mismatch.
+    const query = new URLSearchParams(location.search);
     const backend = await connectBackend({
       storageKey,
-      url: new URLSearchParams(location.search).get("backend"),
+      url: query.get("backend"),
+      plan: query.get("plan"),
     });
 
     window.editor = createEditor(document.getElementById("editor"), {

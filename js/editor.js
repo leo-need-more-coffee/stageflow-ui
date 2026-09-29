@@ -20,7 +20,7 @@
  * The public API: getPipeline / setPipeline / setStages / validate, and the
  * "change" event (Editor is an EventTarget). Everything else is internals.
  */
-import { Backend } from "./backend.js";
+import { Backend, backendStorageKey } from "./backend.js";
 import { CanvasView } from "./canvas.js";
 import { NODE_MIN_W } from "./geometry.js";
 import { kindOf } from "./kinds.js";
@@ -34,7 +34,7 @@ import { SecretStore } from "./secrets.js";
 import { BackendCapabilities } from "./capabilities.js";
 import { VERSION } from "./version.js";
 import { StagesLibrary, Validator } from "./stages.js";
-import { EditorStore } from "./storage.js";
+import { EditorStore, readJson, writeJson } from "./storage.js";
 import { Toolbar } from "./toolbar.js";
 
 function el(tag, className) {
@@ -124,7 +124,7 @@ export class Editor extends EventTarget {
     this.panels = { palette: true, inspector: true };
     this.clipboard = []; // the node buffer: lives in the editor, not in the system one
     // the run is executed by the StageFlow core on the backend, here it is state only
-    this.runner = new Runner(this.backend.runUrl);
+    this.runner = new Runner(this.backend);
     // the pace of a run: the pause between nodes, so that execution can be
     // followed by eye. It lives in the editor rather than in the run: it is
     // chosen BEFORE the start and survives both the run and a reload
@@ -133,7 +133,7 @@ export class Editor extends EventTarget {
     // pipeline JSON (see secrets.js). The names of the server-side ones are
     // fetched, the values are not
     this.secrets = new SecretStore(options.storageKey);
-    this.secrets.loadEnv(this.backend.secretsUrl);
+    this.secrets.loadEnv(this.backend.secretsUrl, (url, init) => this.backend.fetch(url, init));
     // the arguments of the previous run: `vars` goes into the run, `entered`
     // comes back into the dialog, so that the same things are not retyped every
     // time
@@ -221,11 +221,82 @@ export class Editor extends EventTarget {
   /** Re-asks the backend for the stage specs (the registry changed, the
    * backend was restarted). */
   reloadStages() {
-    return this.stages.loadUrl(this.backend.stagesUrl)
+    return this.stages.loadUrl(this.backend.stagesUrl,
+                               (url, init) => this.backend.fetch(url, init))
       .catch((err) => { this.#note(`Stages not loaded — ${err.message ?? err}`); });
   }
 
   validate() { return this.validator.validate(this.model.pipeline, kindOf); }
+
+  /**
+   * Draw and validate against another plan.
+   *
+   * A request to be SHOWN something, not a change of allowance: the backend
+   * answers `/api/meta?plan=` and `/api/stages?plan=` for any plan it has,
+   * unverified, and decides what a run may do from the credential instead.
+   * So this is honest as a preview — "what would this graph look like on the
+   * cheaper tier" — and honest as a mistake: a graph drawn against a plan the
+   * credential is not on is refused at the start of the run, by name.
+   *
+   * Unlike changing the backend, this needs no reload. The address, the
+   * session and the graph all stay; what changes is the palette, the limits
+   * and therefore the issues — which is exactly the thing being looked at.
+   */
+  async setPlan(plan) {
+    const wanted = plan || null;
+    if (wanted === this.backend.plan) return;
+    this.backend.setPlan(wanted);
+    this.#persistBackend();
+    await Promise.all([this.capabilities.load(this.backend), this.reloadStages()]);
+    this.issues = this.validate();
+    this.#renderAll();
+  }
+
+  /**
+   * Change the credential without leaving the session.
+   *
+   * A token is the one connection setting that goes stale *during* the work:
+   * it expires, it gets rotated, it turns out to be the wrong tenant's. The
+   * address is the ground everything stands on and changing it reloads the
+   * page; the credential is not — the backend is the same backend, the graph
+   * is the same graph, and only the answers change. So this re-asks the three
+   * questions and repaints, and a reload would only lose the work.
+   *
+   * Throws with a message fit for showing if the new credential does not
+   * work; the old one is put back, because a half-applied credential is a
+   * session that fails at the next request instead of at this one.
+   */
+  async setCredential(auth) {
+    const previous = this.backend.auth;
+    this.backend.setAuth(auth);
+    let probe;
+    try {
+      probe = await this.backend.probe();
+    } catch (err) {
+      this.backend.setAuth(previous);
+      throw err;
+    }
+    this.#persistBackend();
+    // the probe already fetched the registry — asking twice would be a second
+    // round trip to learn the same thing
+    this.stages.setSpecs(probe.stages, this.backend.stagesUrl);
+    await this.capabilities.load(this.backend);
+    this.secrets.loadEnv(this.backend.secretsUrl,
+                         (url, init) => this.backend.fetch(url, init));
+    this.issues = this.validate();
+    this.#renderAll();
+    return probe.count;
+  }
+
+  /** The credential and the plan live with the address they belong to. */
+  #persistBackend() {
+    const key = this.options.storageKey;
+    if (!key) return;
+    const saved = readJson(backendStorageKey(key)) ?? {};
+    writeJson(backendStorageKey(key), { ...saved, url: this.backend.url,
+                                        auth: this.backend.auth,
+                                        plan: this.backend.plan });
+  }
 
   /**
    * Run the pipeline. `mode: "step"` means debugging: the session stops before
@@ -273,6 +344,10 @@ export class Editor extends EventTarget {
         // impossible without touching the store
         vars: { ...secrets.vars, ...(startVars ?? {}) },
         secrets: { env: secrets.env, names: secrets.names },
+        // which plan this graph was drawn and validated against. The backend
+        // runs on whatever the credential says and refuses the run if the two
+        // differ — "you are on basic" instead of six stages that "do not exist"
+        plan: this.capabilities.plan,
       });
     } catch (err) {
       // most often this is a pipeline description error from the core — it is
@@ -622,11 +697,21 @@ export class Editor extends EventTarget {
     // to "why is the map node greyed out" should not need the console
     const about = this.capabilities.summary();
     if (about) {
-      const badge = el("span", "sf-status-backend");
+      // a button, not a label: "which backend is this" and "where do I put
+      // the token" are one question, and the bar is where it gets asked
+      const badge = el("button", "sf-status-backend");
       badge.textContent = `editor ${VERSION} · ${about}`;
-      badge.title = `${this.backend.url}\n${this.capabilities.known
+      badge.onclick = () => this.toolbar.openConnection();
+      const lines = [this.backend.url];
+      if (this.capabilities.previewing) {
+        lines.push(`showing plan '${this.capabilities.plan}' — a preview; `
+          + "a run goes on whatever your credentials allow");
+      }
+      lines.push(this.capabilities.known
         ? `runs: ${this.capabilities.nodeTypes.join(", ")}`
-        : "this backend serves no /api/meta, so the editor cannot tell what it runs"}`;
+        : "this backend serves no /api/meta, so the editor cannot tell what it runs");
+      lines.push("click to change the backend, the credential or the plan");
+      badge.title = lines.join("\n");
       this.statusEl.append(badge);
     }
     if (!this.issues.length) {

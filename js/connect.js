@@ -11,9 +11,19 @@
  * really allows this origin — not that the string looks like a URL. A checked
  * address is remembered, so the question is asked once rather than on every
  * reload.
+ *
+ * A backend serving more than one tenant wants to know who is calling, so the
+ * screen also takes a header — NAME and value both, because the editor has no
+ * business deciding that a credential is called `Authorization` and looks like
+ * `Bearer …`. It authenticates nothing itself: it carries what it is given and
+ * reports what came back. The check is the same request, so a credential that
+ * is wrong is wrong here, on the screen where it can be corrected, rather than
+ * at the first run.
  */
 import { VERSION } from "./version.js";
-import { Backend, backendStorageKey, normalizeBackendUrl } from "./backend.js";
+import {
+  Backend, DEFAULT_AUTH_HEADER, backendStorageKey, normalizeBackendUrl,
+} from "./backend.js";
 import { readJson, writeJson } from "./storage.js";
 
 const EXAMPLE_URL = "http://127.0.0.1:8765";
@@ -25,15 +35,33 @@ function el(tag, className, text) {
   return node;
 }
 
-/** The address of the last backend that answered, or "". */
-export function storedBackendUrl(storageKey) {
-  const saved = readJson(backendStorageKey(storageKey));
-  return normalizeBackendUrl(saved?.url ?? "");
+/**
+ * What was remembered about the last backend that answered: the address, the
+ * credential and which plan was being looked at.
+ *
+ * The credential goes into `localStorage` beside the editor's other secrets
+ * and with the same caveat as those (see `secrets.js`): it is not encryption,
+ * it protects against a token spreading through exported files and
+ * screenshots, not against someone at the keyboard. The alternative — asking
+ * for it on every reload — is what makes people paste tokens into the graph.
+ */
+export function storedBackend(storageKey) {
+  const saved = readJson(backendStorageKey(storageKey)) ?? {};
+  return {
+    url: normalizeBackendUrl(saved.url ?? ""),
+    auth: {
+      header: typeof saved.auth?.header === "string" && saved.auth.header.trim()
+        ? saved.auth.header.trim() : DEFAULT_AUTH_HEADER,
+      value: typeof saved.auth?.value === "string" ? saved.auth.value : "",
+    },
+    plan: typeof saved.plan === "string" && saved.plan ? saved.plan : null,
+  };
 }
 
-function rememberBackendUrl(storageKey, url) {
+/** What the editor remembers about a backend; one writer, one shape. */
+export function rememberBackend(storageKey, { url, auth, plan }) {
   const key = backendStorageKey(storageKey);
-  if (key) writeJson(key, { url });
+  if (key) writeJson(key, { url, auth, plan: plan ?? null });
 }
 
 /**
@@ -42,6 +70,7 @@ function rememberBackendUrl(storageKey, url) {
  * @param storageKey where to remember the address (the editor's session key)
  * @param url        an address to try before asking (an option, a query
  *                   parameter); `""` means "ask right away"
+ * @param plan       which plan to be shown (`?plan=` on the editor's own URL)
  * @param force      show the screen even if the remembered address answers —
  *                   that is "change the backend" from the menu
  * @param onCancel   makes the screen cancellable (the menu, where there is
@@ -50,9 +79,11 @@ function rememberBackendUrl(storageKey, url) {
  * @returns {Promise<Backend|null>} null only when a cancellable screen was cancelled
  */
 export function connectBackend({
-  storageKey = null, url = null, force = false, onCancel = null,
+  storageKey = null, url = null, plan = null, force = false, onCancel = null,
 } = {}) {
-  const first = normalizeBackendUrl(url ?? "") || (force ? "" : storedBackendUrl(storageKey));
+  const remembered = storedBackend(storageKey);
+  const first = normalizeBackendUrl(url ?? "") || (force ? "" : remembered.url);
+  const shownPlan = plan ?? remembered.plan;
 
   return new Promise((resolve) => {
     const overlay = el("div", "sf-connect-overlay");
@@ -79,6 +110,44 @@ export function connectBackend({
     button.type = "submit";
     form.append(input, button);
     box.append(form);
+
+    // The credential, folded away: most backends want none, and a field
+    // demanding one on the first screen reads as "you need an account".
+    // Folded OPEN when there already is one, so that a token that stopped
+    // working is visible where it is corrected rather than hidden behind a
+    // triangle.
+    const auth = el("details", "sf-connect-auth");
+    auth.open = Boolean(remembered.auth.value);
+    const summary = el("summary", "", "Authorization");
+    summary.append(el("span", "sf-connect-auth-hint",
+      remembered.auth.value ? " — a header is set" : " — optional"));
+    auth.append(summary);
+
+    const authRow = el("div", "sf-connect-auth-row");
+    const headerInput = el("input", "sf-connect-input sf-connect-header");
+    headerInput.type = "text";
+    headerInput.name = "auth-header";
+    headerInput.spellcheck = false;
+    headerInput.autocomplete = "off";
+    headerInput.placeholder = DEFAULT_AUTH_HEADER;
+    headerInput.value = remembered.auth.header;
+    const valueInput = el("input", "sf-connect-input");
+    // a password field so that a token is not on screen in a demonstration;
+    // pasting into one works, and reading it back is not what it is for
+    valueInput.type = "password";
+    valueInput.name = "auth-value";
+    valueInput.spellcheck = false;
+    valueInput.autocomplete = "off";
+    valueInput.placeholder = "Bearer …";
+    valueInput.value = remembered.auth.value;
+    authRow.append(headerInput, valueInput);
+    auth.append(authRow);
+    auth.append(el("p", "sf-connect-auth-note",
+      "Sent with every request, this one included. The name is a field because "
+      + "backends disagree: Authorization, X-Api-Key, whatever a gateway reads. "
+      + "Kept in this browser's localStorage — treat it like the secret store, "
+      + "not like encryption."));
+    box.append(auth);
 
     const status = el("div", "sf-connect-status");
     status.hidden = true;
@@ -122,14 +191,17 @@ export function connectBackend({
         input.focus();
         return;
       }
+      const credential = { header: headerInput.value.trim() || DEFAULT_AUTH_HEADER,
+                           value: valueInput.value.trim() };
       busy = true;
       button.disabled = true;
       input.disabled = true;
       say(`Connecting to ${address}…`, "wait");
       try {
-        const backend = new Backend(address);
+        const backend = new Backend(address, { auth: credential, plan: shownPlan });
         const { count } = await backend.probe();
-        rememberBackendUrl(storageKey, backend.url);
+        rememberBackend(storageKey, { url: backend.url, auth: backend.auth,
+                                      plan: backend.plan });
         say(`Connected: ${count} stages.`, "ok");
         overlay.remove();
         resolve(backend);
@@ -140,13 +212,21 @@ export function connectBackend({
         say(silent
           ? `${address} — ${err.message}. Check the address or start the backend.`
           : `${address} — ${err.message}`, "bad");
+        // a refusal is the one failure with a cure on this screen: unfold the
+        // field rather than leave the answer behind a triangle
+        if (/credential|HTTP 40[13]/i.test(err.message)) {
+          auth.open = true;
+          valueInput.focus();
+        }
       } finally {
         busy = false;
         button.disabled = false;
         input.disabled = false;
       }
-      input.focus();
-      input.select();
+      if (!auth.open) {
+        input.focus();
+        input.select();
+      }
     };
 
     form.onsubmit = (e) => {

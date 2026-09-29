@@ -310,6 +310,17 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   font-family: var(--mono);
   font-size: 11px;
   white-space: nowrap;
+  /* a button that has to keep reading as a status line until it is wanted */
+  background: none;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  padding: 1px 6px;
+  cursor: pointer;
+}
+
+.sf-status-backend:hover {
+  color: var(--ink-soft);
+  border-color: var(--line);
 }
 
 .sf-connect-version {
@@ -1997,3 +2008,127 @@ button.sf-tag:hover { border-color: var(--accent); color: var(--ink); }
 .sf-connect-note a { color: var(--accent); }
 
 .sf-connect-cancel { align-self: flex-start; }
+
+/* the credential: folded away, because most backends want none */
+.sf-connect-auth {
+  font-size: 12px;
+  color: var(--ink-soft);
+}
+
+.sf-connect-auth > summary {
+  cursor: pointer;
+  user-select: none;
+  color: var(--ink-soft);
+}
+
+.sf-connect-auth > summary:hover { color: var(--ink); }
+
+.sf-connect-auth-hint { color: var(--ink-faint); }
+
+.sf-connect-auth-row {
+  display: flex;
+  gap: 8px;
+  margin-top: 8px;
+}
+
+/* the header NAME is the short half: a name, not a token */
+.sf-connect-header { flex: 0 0 34%; }
+
+.sf-connect-auth-note {
+  margin: 8px 0 0;
+  color: var(--ink-faint);
+  font-size: 11px;
+  line-height: 1.6;
+}
+
+/* the connection dialog: address, credential, plan */
+.sf-conn-section {
+  margin: 0 0 18px;
+}
+
+.sf-conn-section:last-child { margin-bottom: 0; }
+
+.sf-conn-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 6px;
+}
+
+.sf-conn-title {
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.sf-conn-row {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.sf-conn-row input {
+  flex: 1;
+  min-width: 0;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  color: var(--ink);
+  font-family: var(--mono);
+  font-size: 12px;
+}
+
+.sf-conn-row input:focus { outline: none; border-color: var(--accent); }
+
+.sf-conn-header { flex: 0 0 32%; }
+
+.sf-conn-url {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--ink);
+  word-break: break-all;
+}
+
+.sf-conn-say {
+  margin-top: 8px;
+  font-size: 11px;
+  line-height: 1.5;
+  min-height: 15px;
+}
+
+.sf-conn-ok { color: var(--ok); }
+.sf-conn-bad { color: var(--danger); }
+.sf-conn-wait { color: var(--ink-soft); }
+
+/* the plan picker in the File menu */
+.sf-plan-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 10px 0;
+}
+
+.sf-plan-option {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding: 8px 10px;
+  border: 1px solid transparent;
+  border-radius: var(--radius);
+  cursor: pointer;
+}
+
+.sf-plan-option:hover { background: var(--well); }
+
+.sf-plan-option.sf-on {
+  border-color: var(--accent);
+  background: var(--well);
+}
+
+.sf-plan-option code { font-family: var(--mono); color: var(--ink); }
+
+.sf-plan-option .sf-muted { font-size: 11px; }

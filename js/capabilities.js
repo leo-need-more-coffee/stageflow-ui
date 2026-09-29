@@ -24,6 +24,8 @@ export class BackendCapabilities extends EventTarget {
   #version = null;
   #api = null;
   #plan = null;
+  #plans = null;
+  #planSource = null;
   #limits = null;
   #probed = false;
 
@@ -39,8 +41,25 @@ export class BackendCapabilities extends EventTarget {
 
   get nodeTypes() { return this.#nodeTypes ? [...this.#nodeTypes].sort() : null; }
 
-  /** The name of the plan this caller is on, when the backend says. */
+  /** The name of the plan this answer is about, when the backend says. */
   get plan() { return this.#plan; }
+
+  /** Every plan the backend will answer about, for a client that offers the
+   * choice — so the names are not written into the editor, which cannot know
+   * them and would be wrong about a backend that is not the example one. */
+  get plans() { return this.#plans; }
+
+  /** How the plan was arrived at: `"query"` — the editor asked to be shown
+   * this one, `"token"` — it is the caller's own, `"open"` — the backend
+   * tells nobody apart. */
+  get planSource() { return this.#planSource; }
+
+  /**
+   * Whether what is on screen is a what-if rather than this caller's own
+   * allowance — worth saying out loud, because the two look identical and
+   * only one of them predicts what a run will do.
+   */
+  get previewing() { return this.#planSource === "query"; }
 
   /** `{counters, gauges, max_retries, max_delay_seconds}`, or null. */
   get limits() { return this.#limits; }
@@ -77,7 +96,8 @@ export class BackendCapabilities extends EventTarget {
   reason(type) {
     if (this.supports(type)) return "";
     if (this.#plan) {
-      return `plan '${this.#plan}' does not include a '${type}' node`;
+      const shown = this.previewing ? " (the plan being previewed)" : "";
+      return `plan '${this.#plan}'${shown} does not include a '${type}' node`;
     }
     const which = this.#version ? `the backend (core ${this.#version})` : "the backend";
     return `${which} does not offer a '${type}' node`;
@@ -87,7 +107,8 @@ export class BackendCapabilities extends EventTarget {
   summary() {
     if (!this.#probed) return "";
     if (!this.known) return "backend version unknown (it serves no /api/meta)";
-    const plan = this.#plan ? `plan ${this.#plan}, ` : "";
+    const shown = this.previewing ? " (preview)" : "";
+    const plan = this.#plan ? `plan ${this.#plan}${shown}, ` : "";
     return `${plan}core ${this.#version}, api v${this.#api}, `
       + `${this.#nodeTypes.size} node types`;
   }
@@ -147,6 +168,8 @@ export class BackendCapabilities extends EventTarget {
     this.#version = meta?.stageflow ?? null;
     this.#api = meta?.api ?? null;
     this.#plan = meta?.plan ?? null;
+    this.#plans = Array.isArray(meta?.plans) && meta.plans.length ? [...meta.plans] : null;
+    this.#planSource = typeof meta?.plan_source === "string" ? meta.plan_source : null;
     this.#limits = meta?.limits && typeof meta.limits === "object" ? meta.limits : null;
     this.#probed = true;
     this.dispatchEvent(new Event("change"));
@@ -158,6 +181,8 @@ export class BackendCapabilities extends EventTarget {
     this.#version = null;
     this.#api = null;
     this.#plan = null;
+    this.#plans = null;
+    this.#planSource = null;
     this.#limits = null;
     this.#probed = true;
     this.dispatchEvent(new Event("change"));

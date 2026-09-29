@@ -43,7 +43,9 @@ Then type the address of a backend on the connection screen — for example
 `http://127.0.0.1:8765` if you are running the
 [example](https://github.com/leo-need-more-coffee/stageflow-example). The
 address is remembered, and `?backend=http://host:port` in the URL skips the
-question.
+question. A backend that wants a credential gets one from the folded-away
+**Authorization** field on the same screen — header name as well as value,
+because the editor has no business deciding what a credential is called.
 
 `server.js` is a hundred lines of static file serving with no dependencies:
 ES modules cannot be loaded from `file://`, so the page has to come over http.
@@ -83,7 +85,8 @@ built, so an editor newer than the backend it is pointed at is the normal
 case. It is not guessed from version numbers — the backend is asked:
 
 ```
-GET /api/meta  ->  {"api": 1, "plan": "basic", "stageflow": "0.12.0",
+GET /api/meta  ->  {"api": 1, "plan": "basic", "plan_source": "token",
+                    "plans": ["basic", "full", "pro"], "stageflow": "0.12.0",
                     "node_types": [...], "stages": 5, "limits": {...}}
 ```
 
@@ -92,7 +95,7 @@ whatever allowance the backend gives the caller. A type missing from it is
 greyed out in the palette with the reason in the tooltip, and a graph already
 using one says so in the status bar **before** a run rather than failing
 halfway through it with `Unknown node type`. The status bar carries the pair,
-`editor 0.3.1 · plan basic, core 0.12.0, api v1`.
+`editor 0.4.0 · plan basic, core 0.12.0, api v1`.
 
 `limits` is the other half, and the editor treats it the same way: what can be
 judged from the graph is judged before the run. A graph whose shortest path is
@@ -105,6 +108,16 @@ During and after a run the debug panel shows what was spent against what was
 allowed (`steps 412/5000`, `tokens 5120/200000`), which is the point of a
 ceiling: to be visible before it is reached.
 
+The **Plan** section of the connection dialog draws the graph against another
+plan of the same backend
+(`?plan=` on `/api/meta` and `/api/stages`; `?plan=basic` on the editor's URL
+opens it that way). That is a **view** — unverified on purpose, because a name
+is not a permission and an editor that must log in before it can grey out a
+palette entry is one nobody configures. What a run may do is the backend's
+decision, taken from the credential: a graph prepared for a plan you are not
+on is refused when it starts, by name, instead of dissolving into stages that
+"do not exist". The status bar marks a preview as one.
+
 A backend that serves no `/api/meta` — an older one, or somebody else's — is
 not second-guessed: nothing is marked and everything works as before, because
 a false "unsupported" would be worse than the error being avoided. The status
@@ -112,6 +125,7 @@ bar says the version is unknown.
 
 | Editor | Speaks | Needs |
 |---|---|---|
+| 0.4.x | api v1 | any StageFlow backend; core ≥ 0.10 to be asked what it runs, ≥ 0.12 for the per-caller answer and the limits. Credentials and `?plan=` need a backend that wants them — one that ignores both behaves exactly as before |
 | 0.3.x | api v1 | any StageFlow backend; core ≥ 0.10 to be asked what it runs, ≥ 0.12 for the per-caller answer and the limits |
 
 ## Releases
@@ -125,11 +139,17 @@ docker run --rm -p 8080:8080 ghcr.io/leo-need-more-coffee/stageflow-ui:latest
 
 The hosted demo at
 [leo-need-more-coffee.github.io/stageflow-ui](https://leo-need-more-coffee.github.io/stageflow-ui/)
-is the same files, deployed from `main`. It is served over https, so the
-backend address you give it has to be reachable from a secure page: a local
-backend works in Chrome (the example backend answers the private-network
-preflight), but a browser that blocks it will simply report the backend as
-unreachable — then run the editor locally, which is one command anyway.
+is the same files, deployed from `main`, and it is a full client rather than a
+demonstration: point it at a backend of your own, give it a credential, pick a
+plan, all from the interface — "File" → "Connection…", or click the backend
+line in the status bar. Nothing is configured at build time, because on a
+static page nothing can be.
+
+It is served over https, so the backend has to be reachable from a secure
+page: `https://…`, or loopback, which browsers allow (the example backend
+answers Chrome's private-network preflight). A plain http address elsewhere is
+blocked before the request is made — the dialog says so rather than letting it
+read as a backend that is switched off.
 
 The version lives in two places, `package.json` and `js/version.js` (the
 browser cannot read the first, nothing rewrites the second — there is no build
@@ -159,8 +179,9 @@ They cover what the eye misses: that every node kind has a port for the next
 node, that inserting into an edge keeps the tail of the graph, that 291 random
 layouts produce no overlaps and no foreign node inside a region frame, that
 undo/redo walks real edits only, that pasted copies are independent, that
-secret values never leave the store, and that an older backend is degraded
-against rather than guessed about.
+secret values never leave the store, that an older backend is degraded against
+rather than guessed about, and that the credential goes on every request while
+`?plan=` goes on none of the ones that run anything.
 
 ## Known limitations
 
