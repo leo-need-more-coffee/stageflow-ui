@@ -15,7 +15,7 @@
  * Run: node tests/layout.mjs
  */
 import "./_catalog.mjs";
-import { autoLayout } from "../js/model.js";
+import { PipelineModel, autoLayout } from "../js/model.js";
 import { computeRegions, regionBounds, skippedArea } from "../js/regions.js";
 import { nodeLayout, orderEdgePath } from "../js/geometry.js";
 
@@ -162,6 +162,96 @@ const snapshot = (graph) =>
 let checked = 0;
 let failed = 0;
 let biggest = 0;
+
+// --------------------------------------------------------------------------
+// Coordinates that stack the cards are not a layout, and are not believed.
+//
+// A graph arriving with `metadata.ui` on every node used to be taken as "this
+// was arranged by somebody". A writer that fills the field mechanically — one
+// point on every node, or numbers that took no account of how wide a card is —
+// produced an unreadable pile instead, and the editor drew it faithfully.
+
+const piledUp = (graph) => {
+  const size = new Map(graph.nodes.map((n) => [n.id, nodeLayout(n)]));
+  const box = (n) => ({ ...n.metadata.ui, ...size.get(n.id) });
+  for (let i = 0; i < graph.nodes.length; i += 1) {
+    for (let j = i + 1; j < graph.nodes.length; j += 1) {
+      const a = box(graph.nodes[i]);
+      const b = box(graph.nodes[j]);
+      if (a.x < b.x + b.width && a.x + a.width > b.x
+        && a.y < b.y + b.height && a.y + a.height > b.y) {
+        return `${graph.nodes[i].id}/${graph.nodes[j].id}`;
+      }
+    }
+  }
+  return null;
+};
+
+const uiOf = (graph) => JSON.stringify(graph.nodes.map((n) => n.metadata.ui));
+
+const chainWith = (place) => ({
+  nodes: [
+    { id: "start", type: "entry", next: "a", metadata: { ui: place(0) } },
+    { id: "a", type: "stage", stage: "Step", next: "b", metadata: { ui: place(1) } },
+    { id: "b", type: "condition", condition: "vars.v0 > 1", then: "c", else: "d",
+      metadata: { ui: place(2) } },
+    { id: "c", type: "stage", stage: "Step", next: "d", metadata: { ui: place(3) } },
+    { id: "d", type: "terminal", metadata: { ui: place(4) } },
+  ],
+});
+
+const claim = (ok, message) => {
+  if (ok) return;
+  failed += 1;
+  console.error(`  ✗ ${message}`);
+};
+
+for (const point of [{ x: 0, y: 0 }, { x: 100, y: 100 }, { x: 40, y: 40 }]) {
+  const model = new PipelineModel();
+  model.setPipeline(chainWith(() => ({ ...point })));
+  claim(!piledUp(model.graph),
+    `one point on every node is a pile, not a layout: ${JSON.stringify(point)}`);
+}
+
+{ // numbers that ignore how wide a card is
+  const model = new PipelineModel();
+  model.setPipeline(chainWith((i) => ({ x: i * 40, y: i * 30 })));
+  claim(!piledUp(model.graph), "coordinates narrower than a card are not believed either");
+}
+
+{ // an arrangement that places the cards apart comes back exactly as it came
+  const graph = chainWith((i) => ({ x: 17 + i * 400, y: 23 + i * 200 }));
+  const before = uiOf(graph);
+  const model = new PipelineModel();
+  model.setPipeline(graph);
+  claim(uiOf(model.graph) === before, "a usable layout is left alone");
+}
+
+{ // a session coming back is the reader's own: touching cards and all
+  const graph = chainWith((i) => ({ x: 60 + i * 12, y: 60 + i * 9 }));
+  const before = uiOf(graph);
+  const model = new PipelineModel();
+  model.setPipeline(graph, { keepLayout: true });
+  claim(uiOf(model.graph) === before,
+    "a restored session is not corrected — somebody dragged those cards");
+}
+
+{ // a subpipeline is a graph like any other
+  const model = new PipelineModel();
+  model.setPipeline({
+    nodes: [{ id: "root", type: "entry", metadata: { ui: { x: 60, y: 60 } } }],
+    subpipelines: { inner: chainWith(() => ({ x: 0, y: 0 })) },
+  });
+  model.setGraph("inner");
+  claim(!piledUp(model.graph), "a subpipeline arriving as a pile is laid out too");
+}
+
+{ // and a node put where one already is steps aside rather than hiding it
+  const model = new PipelineModel();
+  model.setPipeline({ nodes: [{ id: "start", type: "entry", metadata: { ui: { x: 60, y: 60 } } }] });
+  for (let i = 0; i < 4; i += 1) model.addNode("stage", { x: 300, y: 300 }, { stage: "Step" });
+  claim(!piledUp(model.graph), "four nodes asked for one point do not become one card");
+}
 for (let i = 0; i < 300; i += 1) {
   const graph = randomPipeline(2 + Math.floor(rnd() * 4));
   if (graph.nodes.length < 3) continue;
