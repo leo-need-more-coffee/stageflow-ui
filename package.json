@@ -1,6 +1,6 @@
 {
   "name": "stageflow-ui",
-  "version": "0.6.1",
+  "version": "0.6.2",
   "description": "Visual node editor for StageFlow pipelines: static front-end, talks to a StageFlow backend",
   "license": "MIT",
   "type": "module",
