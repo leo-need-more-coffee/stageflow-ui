@@ -143,7 +143,7 @@ case. It is not guessed from version numbers — the backend is asked:
 
 ```
 GET /api/meta  ->  {"api": 1, "plan": "basic", "plan_source": "token",
-                    "plans": ["basic", "full", "pro"], "stageflow": "0.12.0",
+                    "plans": ["basic", "full", "pro"], "stageflow": "0.13.0",
                     "node_types": [...], "stages": 5, "limits": {...}}
 ```
 
@@ -152,7 +152,7 @@ whatever allowance the backend gives the caller. A type missing from it is
 greyed out in the palette with the reason in the tooltip, and a graph already
 using one says so in the status bar **before** a run rather than failing
 halfway through it with `Unknown node type`. The status bar carries the pair,
-`editor 0.4.0 · plan basic, core 0.12.0, api v1`.
+`editor 0.5.0 · plan basic, core 0.13.0, api v1`.
 
 `limits` is the other half, and the editor treats it the same way: what can be
 judged from the graph is judged before the run. A graph whose shortest path is
