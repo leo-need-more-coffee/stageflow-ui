@@ -120,8 +120,12 @@ export class PipelineModel extends EventTarget {
 
   // -------------------------------------------------------- pipeline/graph
 
-  setPipeline(data) {
-    this.#pipeline = normalizePipeline(structuredClone(data), this.spacing);
+  /**
+   * @param keepLayout trust the coordinates in `data` — it is this editor's own
+   *   session coming back, not a document from elsewhere.
+   */
+  setPipeline(data, { keepLayout = false } = {}) {
+    this.#pipeline = normalizePipeline(structuredClone(data), this.spacing, keepLayout);
     this.#graphKey = null;
     // another document — another history: there is no undoing into a foreign
     // pipeline
@@ -188,8 +192,12 @@ export class PipelineModel extends EventTarget {
     return node;
   }
 
+  /** A node at a point. It steps aside from whatever is already there: every
+   * other way of creating one does (`createAt`, an insertion, a paste), and a
+   * card dropped exactly on top of another is a card that was added and
+   * lost. */
   addNode(type, pos, extra = {}) {
-    const node = this.#create({ type, extra }, pos);
+    const node = avoidOverlap(this.graph, this.#create({ type, extra }, pos));
     this.touch();
     return node;
   }
@@ -387,19 +395,51 @@ export class PipelineModel extends EventTarget {
 
 // ----------------------------------------------------------- normalization
 
-function normalizePipeline(data, spacing) {
+function normalizePipeline(data, spacing, keepLayout = false) {
   const pipeline = { ...emptyPipeline(), ...(data ?? {}) };
   pipeline.nodes ??= [];
   pipeline.subpipelines ??= {};
-  normalizeGraph(pipeline, spacing);
+  normalizeGraph(pipeline, spacing, keepLayout);
   for (const sub of Object.values(pipeline.subpipelines)) {
     sub.nodes ??= [];
-    normalizeGraph(sub, spacing);
+    normalizeGraph(sub, spacing, keepLayout);
   }
   return pipeline;
 }
 
-function normalizeGraph(graph, spacing) {
+/**
+ * Whether the coordinates in a graph place the cards on top of one another.
+ *
+ * Coordinates that do are not a layout: nobody arranged this and looked at it.
+ * They are what a writer produces mechanically — the same `{x: 0, y: 0}` on
+ * every node, or a column of numbers that took no account of how wide a card
+ * is — and a graph opened that way is one unreadable pile.
+ *
+ * Measured with the auto-layout's own idea of a card, so this asks exactly the
+ * question the layout would have answered: would it have left them apart.
+ */
+function cardsCollide(graph) {
+  const boxes = graph.nodes.map((node) => {
+    const { width, height } = nodeLayout(node);
+    return { x: node.metadata?.ui?.x ?? 0, y: node.metadata?.ui?.y ?? 0, width, height };
+  });
+  for (let i = 0; i < boxes.length; i += 1) {
+    for (let j = i + 1; j < boxes.length; j += 1) {
+      const a = boxes[i];
+      const b = boxes[j];
+      if (a.x < b.x + b.width && a.x + a.width > b.x
+        && a.y < b.y + b.height && a.y + a.height > b.y) return true;
+    }
+  }
+  return false;
+}
+
+/**
+ * @param keepLayout the coordinates are this editor's own — a restored session
+ *   — and are used as they are. Somebody dragged those cards, and two of them
+ *   touching is their arrangement rather than a mistake to correct on reload.
+ */
+function normalizeGraph(graph, spacing, keepLayout = false) {
   let needsLayout = false;
   // the `entry` field is optional in the JSON if the start is given by an entry
   // node: we derive it right at load time — both the auto-layout and the
@@ -420,6 +460,8 @@ function normalizeGraph(graph, spacing) {
     }
     if (!node.metadata.ui) needsLayout = true;
   }
+  // a graph from outside may carry coordinates that are not a layout at all
+  if (!needsLayout && !keepLayout && cardsCollide(graph)) needsLayout = true;
   if (needsLayout) autoLayout(graph, spacing);
 }
 
