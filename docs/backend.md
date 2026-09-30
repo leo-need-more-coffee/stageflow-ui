@@ -101,6 +101,41 @@ fine — the editor simply shows no environment keys (the request failing is not
 treated as an error). Without the run API the editor opens and draws, and
 running fails with the message the backend returned.
 
+## The language of the answer (`Accept-Language`)
+
+Every request carries `Accept-Language` with the language the editor is drawn in,
+the interface's fallback behind it — `ru, en;q=0.8`. A backend is free to ignore
+it, and one that does simply answers as it always did.
+
+It is **not** how the stage specs get their language: those arrive in every
+language at once and are resolved in the editor (see
+[the shape of a stage spec](#the-shape-of-a-stage-spec)). Sending a header would
+be the wrong mechanism there — the specs are fetched once and the reader picks a
+language afterwards, so a backend that had chosen for them would have to be asked
+again on every change of mind.
+
+What the header is for is the backend's **own** messages: what a refused run
+says, what a validation error says, what a failure says. Those are one answer to
+one request, so they have a language, and the request is the only place that
+language can come from. On a StageFlow backend the locale is set once at the edge
+and nothing below has to be told:
+
+```python
+from stageflow import i18n
+
+asked = request.headers.get("accept-language", "")
+with i18n.use_locale(i18n.negotiate(i18n.parse_accept_language(asked))):
+    ...
+```
+
+Reading the header is the backend's job, not the framework's: `negotiate` matches
+tags against the catalogs on disk and `use_locale` sets the locale for that
+request, but nothing in the core touches a request, and nothing in it decides a
+language on its own.
+
+`Accept-Language` is a CORS-safelisted header, so it adds no preflight and needs
+no line in `Access-Control-Allow-Headers`.
+
 ## What this backend can run (`/api/meta`)
 
 The editor mirrors the core's node registry as it stood when the editor was
@@ -234,7 +269,7 @@ running it yourself.
   "stages": {
     "IncrementStage": {
       "stage_name": "IncrementStage",
-      "description": "Adds delta to a number",
+      "description": {"en": "Adds delta to a number", "ru": "Прибавляет delta к числу"},
       "category": "builtin.math",
       "icon": "/icons/plus.svg",
       "icon_mono": true,
@@ -252,6 +287,28 @@ running it yourself.
 ```
 
 A bare object of specs without the `stages` wrapper is accepted too.
+
+**Every `description` is either a string or a `{locale: text}` mapping** — the
+stage's own and those of its arguments, outputs, events and inputs. A backend
+sends every language it has, because which one the reader wants is not a thing it
+can know: the language is picked in the editor, and picked again whenever the
+reader changes their mind. A stage nobody has translated is a plain string, which
+is the honest shape for prose that exists in one language.
+
+The editor resolves the mapping once, as the specs come in, against the language
+it is drawn in — a regional tag (`ru-RU`) satisfies a request for `ru`, a missing
+language falls back to the one the specs were written in, and a mapping with
+neither gives up its only entry rather than nothing. So nothing downstream of
+that has to know a mapping was ever there.
+
+On a StageFlow backend this is simply what `get_specs()` returns:
+
+```python
+{"stages": {name: cls.get_specs() for name, cls in get_stages().items()}}
+```
+
+The built-in stages ship with their translations, and your own are
+[translated by you](https://leo-need-more-coffee.github.io/stageflow/localization/).
 
 What the editor does with the fields: `arguments` and `outputs` become the rows
 of the inspector (with the type, the description and whether it is required),

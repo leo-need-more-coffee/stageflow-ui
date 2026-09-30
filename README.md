@@ -125,6 +125,11 @@ ES modules cannot be loaded from `file://`, so the page has to come over http.
 - **Secrets stay out of the JSON.** Only the name of a key goes into the
   pipeline; values live in the store and never appear in the debug panel or
   the event log.
+- **The interface speaks the reader's language.** A flat JSON catalog per
+  language in `i18n/`, picked in "View → Language" and remembered; a language
+  is a file plus a line, and nothing in the code names one. A stage's prose is
+  the backend's, so it arrives in every language the backend has and the editor
+  picks — the choice is made where the reader is, not a request away.
 - Subpipelines, live validation, JSON import and export, undo/redo, a node
   clipboard, and a session that survives a reload.
 
@@ -214,10 +219,10 @@ the tag does not match both.
 |---|---|
 | [The backend](docs/backend.md) | the endpoints the editor needs, CORS, the shape of a stage spec |
 | [Building a graph](docs/canvas.md) | connectors, mouse gestures, regions, auto-layout |
-| [The interface](docs/interface.md) | menus and hotkeys, the inspector, the theme, the session |
+| [The interface](docs/interface.md) | menus and hotkeys, the inspector, the theme, the language, the session |
 | [Running and debugging](docs/running.md) | the run pace, starting variables, the debug panel, the run API |
 | [Secrets](docs/secrets.md) | where keys live and why they are not in the pipeline |
-| [Embedding](docs/embedding.md) | `createEditor` options, the public API, the layout of `js/` |
+| [Embedding](docs/embedding.md) | `createEditor` options, the public API, bundling catalogs, the layout of `js/` |
 
 ## Tests
 
@@ -232,8 +237,10 @@ node, that inserting into an edge keeps the tail of the graph, that 291 random
 layouts produce no overlaps and no foreign node inside a region frame, that
 undo/redo walks real edits only, that pasted copies are independent, that
 secret values never leave the store, that an older backend is degraded against
-rather than guessed about, and that the credential goes on every request while
-`?plan=` goes on none of the ones that run anything.
+rather than guessed about, that the credential goes on every request while
+`?plan=` goes on none of the ones that run anything, and that every key the
+interface asks for is in the catalogs of every language — a missing one is not a
+crash, only a reader seeing `delay.one.hint` on the screen.
 
 ## Known limitations
 
