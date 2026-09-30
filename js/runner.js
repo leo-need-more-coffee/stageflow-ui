@@ -18,6 +18,7 @@
  * credential wants it on the stream too, and a run that authenticates for its
  * commands but not for its events is a run that hangs silently.
  */
+import { t } from "./i18n.js";
 import { EventStream } from "./sse.js";
 const LOG_LIMIT = 200; // a debug log, not a server log: more is not needed
 
@@ -32,11 +33,11 @@ const LOG_LIMIT = 200; // a debug log, not a server log: more is not needed
  * node per keystroke" there has to be a pace one can simply watch.
  */
 export const DELAY_PRESETS = [
-  [0, "no delay", "the nodes all flash at once"],
-  [0.25, "0.25 s", null],
-  [0.5, "0.5 s", "the execution order is visible"],
-  [1, "1 s", null],
-  [2, "2 s", "time to talk about a node"],
+  [0, "none"],
+  [0.25, "quarter"],
+  [0.5, "half"],
+  [1, "one"],
+  [2, "two"],
 ];
 
 /**
@@ -52,8 +53,8 @@ export function parseDelay(text) {
 /** The label of a delay for the toolbar and the menu: 0.5 -> "0.5 s". */
 export function delayLabel(seconds) {
   const preset = DELAY_PRESETS.find(([value]) => value === seconds);
-  if (preset) return preset[1];
-  return `${seconds} s`;
+  if (preset) return t(`delay.${preset[1]}`);
+  return t("delay.seconds", { seconds });
 }
 
 export class Runner extends EventTarget {
@@ -69,7 +70,7 @@ export class Runner extends EventTarget {
   delay = 0;         // the delay between nodes, seconds
   streams = new Map();   // node -> the text that arrived in chunks
   streamNode = null;     // whose stream to show: the last node that wrote
-  streamLabel = "Stream"; // what the stage itself called it
+  streamLabel = null;    // what the stage itself called it; null — it did not
   error = null;
   result = null;
   artifacts = null;
@@ -181,7 +182,7 @@ export class Runner extends EventTarget {
       onError: (err) => {
         if (!this.active) return;
         this.status = "failed";
-        this.error = `lost the event stream — ${err.message ?? err}`;
+        this.error = t("run.streamLost", { reason: err.message ?? err });
         this.#changed();
       },
     });
@@ -206,7 +207,7 @@ export class Runner extends EventTarget {
     if (chunk?.stream === true && typeof chunk.text === "string") {
       const node = event.node ?? this.node;
       this.streamNode = node;
-      this.streamLabel = typeof chunk.label === "string" ? chunk.label : "Stream";
+      this.streamLabel = typeof chunk.label === "string" ? chunk.label : null;
       this.streams.set(node, (this.streams.get(node) ?? "") + chunk.text);
       this.streaming = true;
       this.dispatchEvent(new Event("stream"));
@@ -247,7 +248,7 @@ export class Runner extends EventTarget {
         break;
       case "failed":
         this.status = "failed";
-        this.error = event.error ?? "the run failed";
+        this.error = event.error ?? t("run.failed");
         this.node = event.node ?? this.node;
         this.stopStream();
         break;

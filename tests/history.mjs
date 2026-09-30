@@ -11,6 +11,7 @@
  *
  * Run: node tests/history.mjs
  */
+import "./_catalog.mjs";
 import { PipelineModel } from "../js/model.js";
 
 let failed = 0;

@@ -12,6 +12,7 @@
  *
  * Run: node tests/rows.mjs
  */
+import "./_catalog.mjs";
 import { KINDS, formatLiteral, parseLiteral } from "../js/kinds.js";
 
 let failed = 0;

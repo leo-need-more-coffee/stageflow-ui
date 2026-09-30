@@ -8,6 +8,8 @@ WORKDIR /app
 COPY package.json server.js index.html ./
 COPY css ./css
 COPY js ./js
+# the interface's text: without these the page falls back to English
+COPY i18n ./i18n
 
 ENV PORT=8080 \
     HOST=0.0.0.0

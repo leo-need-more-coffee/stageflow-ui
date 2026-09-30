@@ -17,6 +17,7 @@
  *
  * Run: node tests/tenant.mjs
  */
+import "./_catalog.mjs";
 import { Backend, cleanHeaders, mixedContentProblem } from "../js/backend.js";
 import { BackendCapabilities } from "../js/capabilities.js";
 import { EventStream } from "../js/sse.js";

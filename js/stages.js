@@ -4,7 +4,33 @@
  * The format is what `GET /api/stages` of a backend returns, which is the
  * core's `get_specs()`: `{"stages": {"StageName": spec, ...}}` (a bare object
  * of specs is accepted too).
+ *
+ * The prose in a spec arrives in every language the backend has, because the
+ * backend cannot know which one the reader will pick. It is resolved once here,
+ * on the way in, rather than at the dozen places that draw it: the language only
+ * changes on a reload, so the specs held in memory can simply be the reader's
+ * already — and every consumer goes on reading `spec.description` as a string.
  */
+import { prose, t } from "./i18n.js";
+
+/**
+ * A spec with its prose reduced to the reader's language.
+ *
+ * `description` is resolved wherever it appears — on the stage, on every
+ * argument, output, event and input — and everything else is copied as it is.
+ * Resolved before recursing, because a per-locale mapping is itself an object
+ * and walking into one would leave the tags in place.
+ */
+function localizeProse(value) {
+  if (Array.isArray(value)) return value.map(localizeProse);
+  if (value === null || typeof value !== "object") return value;
+  const out = {};
+  for (const [key, inner] of Object.entries(value)) {
+    out[key] = key === "description" ? prose(inner) : localizeProse(inner);
+  }
+  return out;
+}
+
 export class StagesLibrary extends EventTarget {
   #specs = {};
   #source = null;
@@ -28,7 +54,7 @@ export class StagesLibrary extends EventTarget {
   }
 
   setSpecs(data, source = "inline") {
-    this.#specs = data?.stages ?? data ?? {};
+    this.#specs = localizeProse(data?.stages ?? data ?? {});
     this.#source = source;
     this.dispatchEvent(new Event("change"));
   }
@@ -75,16 +101,16 @@ export class Validator {
 
     // the entry point may be left unset as a field: an entry node defines it
     const entryNode = (graph.nodes ?? []).find((n) => n.type === "entry");
-    if (!graph.entry && !entryNode) push(null, "no entry is set");
+    if (!graph.entry && !entryNode) push(null, t("issue.noEntry"));
     else if (graph.entry && !graph.nodes.some((n) => n.id === graph.entry)) {
-      push(null, `entry '${graph.entry}' is not in the graph`);
+      push(null, t("issue.entryMissing", { entry: graph.entry }));
     } else if (graph.entry && entryNode && graph.entry !== entryNode.id) {
-      push(null, `entry '${graph.entry}' does not match the entry node '${entryNode.id}'`);
+      push(null, t("issue.entryMismatch", { entry: graph.entry, node: entryNode.id }));
     }
 
     const seen = new Set();
     for (const node of graph.nodes ?? []) {
-      if (seen.has(node.id)) push(node.id, "duplicate node id");
+      if (seen.has(node.id)) push(node.id, t("issue.duplicateId"));
       seen.add(node.id);
       // said before the run rather than by the run: the backend refuses an
       // unknown type with "Unknown node type", halfway through and by then

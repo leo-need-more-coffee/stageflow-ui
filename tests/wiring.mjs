@@ -20,6 +20,7 @@
  *
  * Run: node tests/wiring.mjs
  */
+import "./_catalog.mjs";
 import { nodeLayout } from "../js/geometry.js";
 import { KINDS, kindOf } from "../js/kinds.js";
 import { reachable } from "../js/regions.js";

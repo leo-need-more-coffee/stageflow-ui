@@ -32,6 +32,7 @@
 import { categoryColor, varColor } from "./colors.js";
 import { dataLinks } from "./dataflow.js";
 import { NODE_MIN_W, nodeLayout } from "./geometry.js";
+import { t } from "./i18n.js";
 import { paintIcon } from "./icons.js";
 import { KINDS, StageKind, kindOf } from "./kinds.js";
 import { openMenu } from "./menu.js";
@@ -136,10 +137,10 @@ export class CanvasView {
     this.edgeToolsEl = el("div", "sf-edge-tools");
     this.edgeToolsEl.hidden = true;
     const plus = el("button", "sf-edge-btn sf-edge-plus", "+");
-    plus.title = "insert a node into this edge";
+    plus.title = t("canvas.insertNode");
     plus.onclick = (e) => this.#onEdgeButton(e, "insert");
     const cut = el("button", "sf-edge-btn sf-edge-cut", "×");
-    cut.title = "cut the link";
+    cut.title = t("canvas.cutEdge");
     cut.onclick = (e) => this.#onEdgeButton(e, "cut");
     this.edgeToolsEl.append(plus, cut);
     this.toolsEl.append(this.edgeToolsEl);
@@ -288,10 +289,9 @@ export class CanvasView {
     this.hostEmpty.textContent = "";
     if (!graph.nodes.length) {
       this.hostEmpty.append(
-        el("div", "sf-empty-title", "Empty graph"),
-        el("div", "", "Double-click the background to create a node."),
-        el("div", "", "Then pull a wire from the bottom port of a card: "
-          + "dropping it into empty space asks what to create there."),
+        el("div", "sf-empty-title", t("canvas.empty")),
+        el("div", "", t("canvas.empty.1")),
+        el("div", "", t("canvas.empty.2")),
       );
       this.host.append(this.hostEmpty);
     } else {
@@ -336,7 +336,7 @@ export class CanvasView {
       label.dataset.region = region.key;
       label.dataset.owner = region.ownerId;
       label.append(el("span", "sf-region-glyph", region.glyph ?? "◆"), el("span", "", region.title));
-      label.title = `the area of node ${region.ownerId} — drag to move it`;
+      label.title = t("canvas.region", { node: region.ownerId });
       frame.append(label);
       this.regionsEl.append(frame);
     }
@@ -516,7 +516,7 @@ export class CanvasView {
       path.style.stroke = varColor(link.name);
       const title = svgEl("title");
       title.textContent = `${link.name}: ${link.writerId} → ${link.readerId}`
-        + (link.ordered ? "" : " (order undefined)");
+        + (link.ordered ? "" : ` ${t("canvas.orderUndefined")}`);
       path.append(title);
       this.svg.append(path);
     }
@@ -638,7 +638,7 @@ export class CanvasView {
     const edge = this.#edgeAt(e);
     if (edge) { this.#offerInsert(e, edge.fromId, edge.portIndex); return; }
     this.#createMenu(e, {
-      title: "create a node",
+      title: t("canvas.create"),
       pick: (spec) => this.#select(this.env.model.createAt(spec, this.#dropPos(e))),
     });
   }
@@ -928,7 +928,7 @@ export class CanvasView {
     if (!port) return;
     const origin = this.#point(node, layout.orderOut(portIndex));
     const temp = this.#tempEdge(origin, true);
-    this.#beginConnecting(fromId, `${port.label}: drop it on a node or into empty space`);
+    this.#beginConnecting(fromId, t("canvas.dragging", { port: port.label }));
     let moved = false;
 
     this.#drag(e, {
@@ -962,7 +962,7 @@ export class CanvasView {
     const onMove = (ev) => { temp.update(ev); this.#hotTarget(ev); };
     window.addEventListener("pointermove", onMove);
     this.#armed = { fromId, portIndex, temp, onMove };
-    this.#beginConnecting(fromId, `${label}: click a node or empty space · Esc — cancel`);
+    this.#beginConnecting(fromId, t("canvas.armed", { port: label }));
   }
 
   #disarm() {
@@ -978,8 +978,8 @@ export class CanvasView {
    * of assembling a graph. */
   #offerCreate(ev, fromId, portIndex) {
     this.#createMenu(ev, {
-      title: "create and connect",
-      hint: "the new node appears here and becomes the target of the port",
+      title: t("canvas.createConnected"),
+      hint: t("canvas.createConnected.hint"),
       allow: (spec) => spec.type !== "entry", // there is no going into the entry point
       pick: (spec) => this.#select(
         this.env.model.createConnected(fromId, portIndex, spec, this.#dropPos(ev))),
@@ -989,8 +989,8 @@ export class CanvasView {
   /** Inserting into an edge: A→B becomes A→N→B. */
   #offerInsert(ev, fromId, portIndex) {
     this.#createMenu(ev, {
-      title: "insert into the edge",
-      hint: "the node will stand between them, the link is kept",
+      title: t("canvas.insertOnEdge"),
+      hint: t("canvas.insertOnEdge.hint"),
       allow: (spec) => spec.type !== "entry" && canContinue(spec.type, spec.extra),
       pick: (spec) => this.#select(this.env.model.insertOnEdge(fromId, portIndex, spec)),
     });
@@ -1006,7 +1006,7 @@ export class CanvasView {
     const port = layout.outs[outIndex];
     if (!port) return;
     const temp = this.#tempEdge(this.#point(node, layout.dataOut(outIndex)), false, "sf-edge-data");
-    this.#beginConnecting(fromId, `${port.variable.name}: whom to pass it to`);
+    this.#beginConnecting(fromId, t("canvas.varDragging", { name: port.variable.name }));
 
     this.#drag(e, {
       move: (ev) => { temp.update(ev); this.#hotTarget(ev); },
@@ -1018,8 +1018,8 @@ export class CanvasView {
         if (targetId === fromId) return;
         if (targetId) { this.#offerVariable(ev, targetId, port.variable); return; }
         this.#createMenu(ev, {
-          title: `${port.variable.name} → a new node`,
-          hint: "the node will receive this variable",
+          title: t("canvas.varToNode", { name: port.variable.name }),
+          hint: t("canvas.varToNode.hint"),
           allow: (spec) => spec.type !== "entry",
           pick: (spec) => {
             // the reader is put into the flow after the writer, or it would see
@@ -1070,9 +1070,9 @@ export class CanvasView {
     this.#hotTarget(ev, canContinue(spec.type, spec.extra));
     const edge = this.#edgeAt(ev);
     const overId = this.#nodeAt(ev);
-    this.#hint(edge && !overId ? "insert into the edge"
-      : overId ? `attach after ${overId}`
-      : "create here");
+    this.#hint(edge && !overId ? t("canvas.insertOnEdge")
+      : overId ? t("canvas.attachAfter", { node: overId })
+      : t("canvas.createHere"));
   }
 
   /**

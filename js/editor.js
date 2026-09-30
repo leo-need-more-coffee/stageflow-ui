@@ -23,6 +23,7 @@
 import { Backend, backendStorageKey } from "./backend.js";
 import { CanvasView } from "./canvas.js";
 import { NODE_MIN_W } from "./geometry.js";
+import { t, tn } from "./i18n.js";
 import { kindOf } from "./kinds.js";
 import { Inspector } from "./inspector.js";
 import { PipelineModel } from "./model.js";
@@ -223,7 +224,7 @@ export class Editor extends EventTarget {
   reloadStages() {
     return this.stages.loadUrl(this.backend.stagesUrl,
                                (url, init) => this.backend.fetch(url, init))
-      .catch((err) => { this.#note(`Stages not loaded — ${err.message ?? err}`); });
+      .catch((err) => { this.#note(t("editor.stagesFailed", { reason: err.message ?? err })); });
   }
 
   validate() { return this.validator.validate(this.model.pipeline, kindOf); }
@@ -352,7 +353,7 @@ export class Editor extends EventTarget {
     } catch (err) {
       // most often this is a pipeline description error from the core — it is
       // more useful than "it did not work", so it goes to the status bar as it is
-      this.#note(`The run did not start — ${err.message ?? err}`);
+      this.#note(t("editor.runFailed", { reason: err.message ?? err }));
       return null;
     }
   }
@@ -377,7 +378,7 @@ export class Editor extends EventTarget {
     const ids = [...this.selection.nodes];
     if (!ids.length) return 0;
     this.clipboard = this.model.copyNodes(ids);
-    this.canvas.flashHint(`nodes copied: ${this.clipboard.length}`);
+    this.canvas.flashHint(tn("editor.copied", this.clipboard.length));
     return this.clipboard.length;
   }
 
@@ -400,9 +401,9 @@ export class Editor extends EventTarget {
     const ids = this.model.pasteNodes(this.clipboard, this.canvas.pasteAnchor());
     if (ids.length) {
       this.selection.setNodes(ids);
-      this.canvas.flashHint(`nodes pasted: ${ids.length}`);
+      this.canvas.flashHint(tn("editor.pasted", ids.length));
     } else {
-      this.canvas.flashHint("nothing to paste: the graph already has an entry point");
+      this.canvas.flashHint(t("editor.pasteEntry"));
     }
     return ids;
   }
@@ -539,7 +540,7 @@ export class Editor extends EventTarget {
   #side(name, className, panelEl, glyph) {
     const side = el("div", `sf-side ${className}`);
     const button = el("button", "sf-side-toggle", glyph);
-    button.title = "Fold the panel";
+    button.title = t("editor.foldPanel");
     button.onclick = () => this.togglePanel(name);
     side.append(panelEl, button);
     return side;
@@ -549,7 +550,7 @@ export class Editor extends EventTarget {
    * easy as folding it. */
   #rail(name, className, glyph) {
     const rail = el("button", `sf-rail ${className}`, glyph);
-    rail.title = "Unfold the panel";
+    rail.title = t("editor.unfoldPanel");
     rail.onclick = () => this.togglePanel(name);
     return rail;
   }
@@ -700,23 +701,22 @@ export class Editor extends EventTarget {
       // a button, not a label: "which backend is this" and "where do I put
       // the token" are one question, and the bar is where it gets asked
       const badge = el("button", "sf-status-backend");
-      badge.textContent = `editor ${VERSION} · ${about}`;
+      badge.textContent = `${t("editor.name", { version: VERSION })} · ${about}`;
       badge.onclick = () => this.toolbar.openConnection();
       const lines = [this.backend.url];
       if (this.capabilities.previewing) {
-        lines.push(`showing plan '${this.capabilities.plan}' — a preview; `
-          + "a run goes on whatever your credentials allow");
+        lines.push(t("editor.previewing", { plan: this.capabilities.plan }));
       }
       lines.push(this.capabilities.known
-        ? `runs: ${this.capabilities.nodeTypes.join(", ")}`
-        : "this backend serves no /api/meta, so the editor cannot tell what it runs");
-      lines.push("click to change the backend, the credential or the plan");
+        ? t("conn.answer.runs", { types: this.capabilities.nodeTypes.join(", ") })
+        : t("conn.answer.none"));
+      lines.push(t("editor.clickToChange"));
       badge.title = lines.join("\n");
       this.statusEl.append(badge);
     }
     if (!this.issues.length) {
       const ok = el("span", "sf-status-ok");
-      ok.textContent = "✓ the graph is valid";
+      ok.textContent = `✓ ${t("editor.valid")}`;
       this.statusEl.append(ok);
       return;
     }

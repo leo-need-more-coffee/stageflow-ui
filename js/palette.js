@@ -16,6 +16,7 @@
  * rather than a node.
  */
 import { categoryColor } from "./colors.js";
+import { t } from "./i18n.js";
 import { paintIcon } from "./icons.js";
 import { KINDS, StageKind } from "./kinds.js";
 
@@ -46,7 +47,7 @@ export class Palette {
 
     const search = el("input", "sf-search");
     search.type = "search";
-    search.placeholder = "Search a stage...";
+    search.placeholder = t("palette.search");
     search.value = this.#filter;
     search.oninput = () => {
       this.#filter = search.value.toLowerCase();
@@ -54,7 +55,7 @@ export class Palette {
     };
     this.host.append(search);
 
-    this.host.append(el("div", "sf-palette-title", "Nodes"));
+    this.host.append(el("div", "sf-palette-title", t("palette.nodes")));
     for (const kind of KINDS.values()) {
       if (kind === StageKind) continue; // stage is added by picking a stage
       const item = el("button", "sf-palette-item");
@@ -72,7 +73,7 @@ export class Palette {
       this.host.append(item);
     }
 
-    this.host.append(el("div", "sf-palette-title", "Stages"));
+    this.host.append(el("div", "sf-palette-title", t("palette.stages")));
     this.stagesEl = el("div", "sf-palette-stages");
     this.host.append(this.stagesEl);
     this.#renderStages();
@@ -81,8 +82,7 @@ export class Palette {
   #renderStages() {
     this.stagesEl.textContent = "";
     if (!this.env.stages.loaded) {
-      this.stagesEl.append(el("div", "sf-muted",
-        "No stages loaded. Menu File -> Stage registry..."));
+      this.stagesEl.append(el("div", "sf-muted", t("palette.noStages")));
       return;
     }
     for (const [category, specs] of this.env.stages.byCategory()) {
@@ -92,7 +92,12 @@ export class Palette {
         || (s.description ?? "").toLowerCase().includes(this.#filter));
       if (!matched.length) continue;
 
-      this.stagesEl.append(el("div", "sf-palette-cat", category));
+      // a category is an id the backend chose. The catalog names the built-in
+      // ones; a host's own category has no entry and shows as it was written,
+      // which is the only honest answer for a word the editor has never seen
+      const key = `category.${category}`;
+      const name = t(key);
+      this.stagesEl.append(el("div", "sf-palette-cat", name === key ? category : name));
       for (const spec of matched) {
         const item = el("button", "sf-palette-item sf-palette-stage");
         item.style.setProperty("--kind-color",
