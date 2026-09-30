@@ -1913,6 +1913,35 @@ button.sf-tag:hover { border-color: var(--accent); color: var(--ink); }
 
 .sf-status-issue:hover { background: rgba(232, 105, 122, 0.16); }
 
+/* something other than the graph, connected to this editor — the bridge to an
+   agent. Reads as a state, not as a problem: it sits with the backend badge
+   rather than with the issues */
+.sf-status-note {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--line);
+  border-radius: 7px;
+  padding: 3px 10px;
+  color: var(--ink-faint);
+  font-weight: 600;
+  cursor: help;
+}
+
+/* a chip that does something when clicked says so by the cursor alone */
+.sf-status-act {
+  cursor: pointer;
+  font: inherit;
+}
+
+.sf-status-act:hover { border-color: var(--accent-bright); }
+
+.sf-status-bridge {
+  border-color: var(--accent-soft);
+  background: var(--accent-soft);
+  color: var(--accent-bright);
+}
+
 /* ------------------------------------------------------------- modals */
 
 .sf-modal-overlay {
