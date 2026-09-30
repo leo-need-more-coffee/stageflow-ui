@@ -139,6 +139,9 @@ the language without a reload has to hand the specs over again.
   negotiation of a language, `t` / `tn` / `pieces` / `has` to read a string, and
   `prose` to pick a language out of the `{locale: text}` mapping a backend sent
   (see [Languages](#languages));
+- `bridge.js` — the connection to an agent working on this graph from
+  outside the browser: off unless `?bridge=` asks for it (see
+  [The bridge to an agent](bridge.md));
 - `secrets.js` — the key store: the local values and the names of the secrets
   in the server environment, a mask instead of a value (see
   [Secrets](secrets.md));

@@ -14,9 +14,10 @@
 <body>
   <div id="editor"></div>
   <script type="module">
+    import { connectBridge } from "./js/bridge.js";
     import { connectBackend } from "./js/connect.js";
     import { createEditor } from "./js/editor.js";
-    import { loadLocale } from "./js/i18n.js";
+    import { loadLocale, t } from "./js/i18n.js";
 
     const storageKey = "stageflow-editor";
 
@@ -48,6 +49,24 @@
       storageKey,
       onChange: (pipeline) => console.debug("pipeline changed", pipeline),
     });
+
+    // `?bridge=http://127.0.0.1:7433#bridge-token=…` — an agent working on
+    // this graph from somewhere else (stageflow-mcp --bridge). Without the
+    // parameter nothing here runs and nothing is drawn. The token is in the
+    // fragment on purpose: this page is served by somebody else, and a query
+    // parameter would be in their log and in every Referer.
+    connectBridge(window.editor, {
+      onState: (state, detail) => {
+        const said = {
+          connecting: () => [t("bridge.connecting"), t("bridge.about")],
+          live: () => [detail ? t("bridge.did", { note: detail }) : t("bridge.live"),
+                       t("bridge.about")],
+          lost: () => [t("bridge.lost"), detail || ""],
+        }[state];
+        const [text, title] = said ? said() : ["", ""];
+        window.editor.setStatusNote("bridge", text, title);
+      },
+    }).then((bridge) => { if (bridge) window.bridge = bridge; });
   </script>
 </body>
 </html>

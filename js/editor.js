@@ -99,6 +99,9 @@ export class Selection extends EventTarget {
 
 export class Editor extends EventTarget {
   #restoredView = false;
+  /** Extra chips in the status bar, by owner — so a source replaces its own
+   * line rather than adding a second one on every update. */
+  #notes = new Map();
 
   constructor(container, options = {}) {
     super();
@@ -694,6 +697,20 @@ export class Editor extends EventTarget {
     this.#renderStatus();
   }
 
+  /**
+   * A line in the status bar belonging to something other than the graph.
+   *
+   * The bar already answers "what is this connected to" (the backend) and
+   * "what is wrong" (the issues); a bridge to an agent is the same kind of
+   * question and belongs beside them rather than in a corner of its own.
+   * Falsy text removes the owner's chip.
+   */
+  setStatusNote(owner, text, title = "") {
+    if (text) this.#notes.set(owner, { text, title });
+    else this.#notes.delete(owner);
+    this.#renderStatus();
+  }
+
   #renderStatus() {
     this.statusEl.textContent = "";
     // which backend this is talking to, on the right of the bar: the answer
@@ -715,6 +732,12 @@ export class Editor extends EventTarget {
       lines.push(t("editor.clickToChange"));
       badge.title = lines.join("\n");
       this.statusEl.append(badge);
+    }
+    for (const [owner, note] of this.#notes) {
+      const chip = el("span", `sf-status-note sf-status-${owner}`);
+      chip.textContent = note.text;
+      if (note.title) chip.title = note.title;
+      this.statusEl.append(chip);
     }
     if (!this.issues.length) {
       const ok = el("span", "sf-status-ok");

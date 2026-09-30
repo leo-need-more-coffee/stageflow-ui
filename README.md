@@ -222,6 +222,7 @@ the tag does not match both.
 | [The interface](docs/interface.md) | menus and hotkeys, the inspector, the theme, the language, the session |
 | [Running and debugging](docs/running.md) | the run pace, starting variables, the debug panel, the run API |
 | [Secrets](docs/secrets.md) | where keys live and why they are not in the pipeline |
+| [The bridge to an agent](docs/bridge.md) | letting an assistant draw on this canvas, and read back what you drew |
 | [Embedding](docs/embedding.md) | `createEditor` options, the public API, bundling catalogs, the layout of `js/` |
 
 ## Tests
