@@ -68,6 +68,8 @@ export class Inspector {
   /** Whether the "how to assemble a graph" fold is open. The panel is rebuilt
    * on every edit, and a <details> rebuilt is a <details> shut. */
   #howToOpen = false;
+  /** The node whose form is open: the one its own links may not point at. */
+  #openNode = null;
 
   constructor(host, env) {
     this.host = host;
@@ -78,6 +80,7 @@ export class Inspector {
   render() {
     this.#flushPending();
     this.host.textContent = "";
+    this.#openNode = null;
     const sel = this.env.selection.current;
     if (!sel) return this.#renderOverview();
     if (sel.type === "edge") return this.#renderEdge(sel);
@@ -303,6 +306,7 @@ export class Inspector {
   }
 
   #renderNode(node) {
+    this.#openNode = node.id;
     const kind = kindOf(node);
     const head = el("h3", "sf-kind-title");
     head.style.setProperty("--kind-color", kind.accent(node, this.env));
@@ -383,10 +387,30 @@ export class Inspector {
     return box;
   }
 
+  /**
+   * The nodes a link may point at: everything in the graph but the one whose
+   * form this is. A port pointing at its own node is a loop with no way out —
+   * the only node that runs between two visits is that node itself, so nothing
+   * can change the decision — and the canvas has always refused to draw such a
+   * wire. The panel used to offer it in a dropdown all the same.
+   *
+   * A value already stored stays in the list even when it is the node itself or
+   * a name the graph does not have: a `<select>` that cannot show what is in the
+   * JSON would say something other than the truth. Validation names both.
+   */
+  #targetIds(current) {
+    const ids = this.env.model.graph.nodes
+      .map((n) => n.id)
+      .filter((id) => id !== this.#openNode);
+    const value = String(current ?? "");
+    if (value && !ids.includes(value)) ids.push(value);
+    return ["", ...ids];
+  }
+
   /** A dropdown of the graph nodes (an empty value means "not set"). */
   #nodeSelect(value, onChange) {
     const select = el("select");
-    for (const id of ["", ...this.env.model.graph.nodes.map((n) => n.id)]) {
+    for (const id of this.#targetIds(value)) {
       const opt = el("option", "", id === "" ? t("common.unset") : id);
       opt.value = id;
       select.append(opt);
@@ -459,7 +483,7 @@ export class Inspector {
     if (field.kind === "select" || field.kind === "node-ref") {
       const select = el("select");
       const options = field.kind === "node-ref"
-        ? ["", ...this.env.model.graph.nodes.map((n) => n.id)]
+        ? this.#targetIds(field.get())
         : field.options;
       for (const option of options) {
         const [value, label] = Array.isArray(option) ? option : [option, option];
@@ -647,7 +671,7 @@ export class Inspector {
     if (col.type === "select" || col.type === "node-ref") {
       const select = el("select");
       const options = col.type === "node-ref"
-        ? ["", ...this.env.model.graph.nodes.map((n) => n.id)]
+        ? this.#targetIds(row[col.key])
         : col.options;
       for (const option of options) {
         const [value, label] = Array.isArray(option) ? option : [option, option];

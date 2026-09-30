@@ -276,6 +276,8 @@
   "accept.switchCase": "a branch on {name}",
 
   "issue.notInGraph": "{what} '{id}' is not in the graph",
+  "issue.selfLoop": "the '{port}' link points at this very node: a loop with no way out",
+  "issue.noWayOut": "from here a run can no longer end: no path leads to a finish — {nodes}",
   "issue.varCycle": "cyclic variable dependency: {names}",
   "issue.exposeName": "expose '{name}' must be a variable name",
   "issue.varNoName": "a variable has no name",
@@ -393,6 +395,7 @@
   "canvas.empty.2": "Then pull a wire from the bottom port of a card: dropping it into empty space asks what to create there.",
   "canvas.region": "the area of node {node} — drag to move it",
   "canvas.orderUndefined": "(order undefined)",
+  "canvas.noSelfLink": "a node cannot lead into itself — a loop with no way out",
   "canvas.create": "create a node",
   "canvas.createConnected": "create and connect",
   "canvas.createConnected.hint": "the new node appears here and becomes the target of the port",

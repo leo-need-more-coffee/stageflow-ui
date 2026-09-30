@@ -593,6 +593,7 @@ export class CanvasView {
       this.#disarm();
       if (targetId) {
         if (targetId !== armed.fromId) this.env.model.connect(armed.fromId, armed.portIndex, targetId);
+        else this.flashHint(t("canvas.noSelfLink"));
       } else {
         this.#offerCreate(e, armed.fromId, armed.portIndex);
       }
@@ -880,14 +881,21 @@ export class CanvasView {
     this.hintEl.hidden = !text;
   }
 
-  /** Highlighting what the drop will land on right now. */
-  #hotTarget(ev, withEdges = false) {
+  /**
+   * Highlighting what the drop will land on right now. The card the wire comes
+   * FROM is not a target: a port pointing at its own node is a loop with no way
+   * out, and the drop has always refused it — the highlight used to promise
+   * otherwise.
+   */
+  #hotTarget(ev, withEdges = false, exclude = null) {
     for (const node of this.nodesEl.querySelectorAll(".sf-drop-hot")) {
       node.classList.remove("sf-drop-hot");
     }
-    const id = this.#nodeAt(ev);
+    const at = this.#nodeAt(ev);
+    const id = at === exclude ? null : at;
     if (id) this.#nodeElById(id)?.classList.add("sf-drop-hot");
-    this.#markEdgeHot(!id && withEdges ? this.#edgeAt(ev) : null);
+    // over the source card there is nothing to drop on, edges included
+    this.#markEdgeHot(!at && withEdges ? this.#edgeAt(ev) : null);
   }
 
   #markEdgeHot(edge) {
@@ -940,7 +948,7 @@ export class CanvasView {
       move: (ev) => {
         moved = moved || Math.hypot(ev.clientX - e.clientX, ev.clientY - e.clientY) > 4;
         temp.update(ev);
-        this.#hotTarget(ev);
+        this.#hotTarget(ev, false, fromId);
       },
       cancel: () => { temp.remove(); this.#endConnecting(); },
       up: (ev) => {
@@ -951,6 +959,9 @@ export class CanvasView {
         const targetId = this.#nodeAt(ev);
         if (!targetId) this.#offerCreate(ev, fromId, portIndex);
         else if (targetId !== fromId) this.env.model.connect(fromId, portIndex, targetId);
+        // dropped back on the card it came from: refused, and said out loud —
+        // silence reads as "the drop missed" and is tried again
+        else this.flashHint(t("canvas.noSelfLink"));
       },
     });
   }
@@ -964,7 +975,7 @@ export class CanvasView {
   #arm(fromId, portIndex, origin, label) {
     this.#disarm();
     const temp = this.#tempEdge(origin, true);
-    const onMove = (ev) => { temp.update(ev); this.#hotTarget(ev); };
+    const onMove = (ev) => { temp.update(ev); this.#hotTarget(ev, false, fromId); };
     window.addEventListener("pointermove", onMove);
     this.#armed = { fromId, portIndex, temp, onMove };
     this.#beginConnecting(fromId, t("canvas.armed", { port: label }));

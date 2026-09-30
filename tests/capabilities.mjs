@@ -222,6 +222,92 @@ const withPlan = new Validator(stages, planned)
   .filter((i) => /shortest way/.test(i.message));
 check(withPlan.length === 1, "the validator carries a limit issue like any other");
 
+// ---------------------------------------------- a link into its own node
+
+// a port pointing at the node it belongs to is a loop nothing can leave: the
+// only node that runs between two visits is that node itself. The panel does
+// not offer it any more, so what is checked here is a graph that arrives as
+// JSON with one already in it.
+{
+  const selfish = () => ({
+    entry: "a",
+    nodes: [
+      { id: "a", type: "condition", condition: "vars.x", then: "a", else: "end" },
+      { id: "end", type: "terminal", result: {} },
+    ],
+  });
+  const issues = new Validator(stages, null).validate(selfish(), kindOf)
+    .filter((i) => i.node === "a" && /points at this very node/.test(i.message));
+  check(issues.length === 1, "a port pointing at its own node is reported");
+
+  const cycle = () => ({
+    entry: "a",
+    nodes: [
+      { id: "a", type: "condition", condition: "vars.x", then: "b", else: "end" },
+      { id: "b", type: "stage", stage: "S", next: "a" },
+      { id: "end", type: "terminal", result: {} },
+    ],
+  });
+  const loops = new Validator(stages, null).validate(cycle(), kindOf)
+    .filter((i) => /points at this very node/.test(i.message));
+  check(loops.length === 0, "a loop through another node is how a loop is written");
+}
+
+// ------------------------------------------------- a ring with no way out
+
+// the general case of the same mistake: a loop nobody gave an exit. What is
+// checked besides the catch is the silence — on the ordinary loop, on a body
+// whose tail hands control back to its block, and on a detached pair of nodes
+// that the entry cannot reach at all.
+{
+  const ringOf = (extra = {}) => ({
+    entry: "start",
+    nodes: [
+      { id: "start", type: "entry", variables: {}, next: "a" },
+      { id: "a", type: "stage", stage: "S", next: "b" },
+      { id: "b", type: "stage", stage: "S", next: "a" },
+      ...(extra.nodes ?? []),
+    ],
+  });
+  const ringIssues = (graph) => new Validator(stages, null).validate(graph, kindOf)
+    .filter((i) => /no path leads to a finish/.test(i.message));
+
+  const caught = ringIssues(ringOf());
+  check(caught.length === 1, "a ring with no way out is reported once");
+  // the entry leads into the ring and cannot end either: the issue is put on the
+  // first node the run reaches that is already trapped, which is where to look
+  check(caught[0]?.node === "start", "and it is reported where the trap begins");
+  check(/start, a, b/.test(caught[0]?.message ?? ""), "naming everything caught in it");
+
+  // the same ring, but a condition can leave it — that is how a loop is written
+  const loop = {
+    entry: "start",
+    nodes: [
+      { id: "start", type: "entry", variables: {}, next: "check" },
+      { id: "check", type: "condition", condition: "vars.more", then: "work", else: "end" },
+      { id: "work", type: "stage", stage: "S", next: "check" },
+      { id: "end", type: "terminal", result: {} },
+    ],
+  };
+  check(ringIssues(loop).length === 0, "a loop with an exit is not a ring");
+
+  // the tail of a map body leads back into the block, not into a ring
+  check(ringIssues(graphWithMap()).length === 0,
+    "the body of a loop is left alone");
+
+  // two nodes pointing at each other off to the side: a graph half-assembled
+  const aside = {
+    entry: "start",
+    nodes: [
+      { id: "start", type: "entry", variables: {}, next: "end" },
+      { id: "end", type: "terminal", result: {} },
+      { id: "x", type: "stage", stage: "S", next: "y" },
+      { id: "y", type: "stage", stage: "S", next: "x" },
+    ],
+  };
+  check(ringIssues(aside).length === 0, "a ring the entry cannot reach is not reported");
+}
+
 // ------------------------------------------- the released version number
 
 // the browser cannot read package.json and nothing rewrites the constant at
