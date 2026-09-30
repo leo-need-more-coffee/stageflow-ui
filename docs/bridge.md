@@ -87,17 +87,32 @@ screen-sharing. The editor reads it once and takes it out of the address bar.
 None of that makes the bridge something to open on a shared machine. It binds to
 loopback only, and there is deliberately no option to bind it anywhere else.
 
-## From a page you serve yourself
+## The hosted editor and your machine
 
-The rules above are a browser's, not ours: an **https** page reaching
-`127.0.0.1` is a private-network request in Chrome, and it is only allowed
-because the bridge answers the preflight that asks
-(`Access-Control-Allow-Private-Network`). A browser that refuses regardless
-leaves the same way out as a local backend does — serve the editor from this
-machine too, and everything is one origin:
+This is a browser rule and it is worth knowing before it surprises you: a page
+served from the internet reaching `127.0.0.1` is a request across address
+spaces, and browsers guard it. The bridge answers the preflight that asks
+(`Access-Control-Allow-Private-Network`), which is what older Chrome wanted —
+but current Chrome has moved that guard to a **permission**: the first such
+request raises a prompt about reaching devices on your local network, and until
+somebody says yes the request fails with an ordinary-looking network error.
+
+So from the published editor the bridge works **once you allow it**. The status
+bar says as much rather than showing "failed to fetch", which would send you
+looking for a process that is running perfectly well.
+
+If the prompt is refused, or never appears — an automated browser, a policy, a
+version that does not implement it — serve the editor from the same machine and
+the question does not arise at all, because then nothing crosses anything:
 
 ```bash
 node server.js            # http://127.0.0.1:8080
 ```
 
-Then open `http://127.0.0.1:8080/?backend=…&bridge=…#bridge-token=…`.
+```bash
+stageflow-mcp --backend https://… --bridge --editor http://127.0.0.1:8080/
+```
+
+`--editor` is what the printed link points at. The editor is also a container
+(`ghcr.io/leo-need-more-coffee/stageflow-ui`) if you would rather not have a
+checkout.

@@ -485,6 +485,7 @@
   "bridge.did": "AI: {note}",
   "bridge.lost": "AI bridge: lost",
   "bridge.retry": "click to try again",
+  "bridge.localNetwork": "the browser did not let this page reach an address on your machine. Allow it when asked, or open the editor from that machine instead (it is served at 127.0.0.1 when you run it yourself)",
   "bridge.about": "an agent outside the browser is working on this graph: what it draws lands here, what you draw is sent back, and undo takes back anything it did",
 
   "sse.noBody": "the stream has no body"

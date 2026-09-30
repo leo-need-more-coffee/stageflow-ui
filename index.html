@@ -64,7 +64,8 @@
           // the agent's process comes and goes with its session, so a lost
           // bridge is a thing to try again rather than a thing to report
           lost: () => [t("bridge.lost"),
-                       [detail, t("bridge.retry")].filter(Boolean).join("\n"),
+                       [detail === "local-network" ? t("bridge.localNetwork") : detail,
+                        t("bridge.retry")].filter(Boolean).join("\n"),
                        () => window.bridge?.reconnect()],
         }[state];
         const [text, title, act] = said ? said() : ["", "", null];

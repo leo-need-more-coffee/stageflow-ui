@@ -140,7 +140,7 @@ export class Bridge {
       said = await answer.json();
       if (said?.bridge !== "stageflow") throw new Error("not a StageFlow bridge");
     } catch (err) {
-      this.#lost(err?.message || String(err));
+      this.#lost(this.#whyUnreachable(err));
       return false;
     }
     // it answered, so the token is good and worth keeping for a reload
@@ -167,6 +167,21 @@ export class Bridge {
     this.#listen();
     this.onState?.("live");
     return true;
+  }
+
+  /**
+   * Why the bridge could not be reached, in terms somebody can act on.
+   *
+   * A browser refusing to let a public page touch a loopback address reports
+   * it as an ordinary failed fetch, and "Failed to fetch" sends a person
+   * looking for a crashed process that is running perfectly well. The one
+   * case worth naming is that one, and it is recognisable from where the page
+   * is served and where the bridge is.
+   */
+  #whyUnreachable(err) {
+    const loopback = /^https?:\/\/(127\.|\[?::1|localhost)/.test(this.url);
+    if (loopback && location.protocol === "https:") return "local-network";
+    return err?.message || String(err);
   }
 
   close() {
