@@ -31,12 +31,12 @@
  */
 import { categoryColor, varColor } from "./colors.js";
 import { dataLinks } from "./dataflow.js";
-import { NODE_MIN_W, nodeLayout } from "./geometry.js";
+import { NODE_MIN_W, nodeLayout, orderEdgePath } from "./geometry.js";
 import { t } from "./i18n.js";
 import { paintIcon } from "./icons.js";
 import { KINDS, StageKind, kindOf } from "./kinds.js";
 import { openMenu } from "./menu.js";
-import { computeRegions, regionBounds } from "./regions.js";
+import { computeRegions, regionBounds, skippedArea } from "./regions.js";
 import { canContinue, freePortIndex } from "./wiring.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -254,12 +254,6 @@ export class CanvasView {
     return { x: node.metadata.ui.x + dx, y: node.metadata.ui.y + dy };
   }
 
-  /** A vertical bézier: tangents up and down — for order edges. */
-  #vPath(a, b) {
-    const dy = Math.max(48, Math.abs(b.y - a.y) / 2);
-    return `M ${a.x} ${a.y} C ${a.x} ${a.y + dy}, ${b.x} ${b.y - dy}, ${b.x} ${b.y}`;
-  }
-
   /** A horizontal bézier: tangents left and right — for data edges. */
   #hPath(a, b) {
     const dx = Math.max(48, Math.abs(b.x - a.x) / 2);
@@ -458,7 +452,8 @@ export class CanvasView {
 
         const from = this.#point(node, layout.orderOut(index));
         const to = this.#point(target, layouts.get(target.id).orderIn);
-        const d = this.#vPath(from, to);
+        const d = orderEdgePath(from, to,
+          skippedArea(this.regions, node.id, targetId, from, to));
 
         const path = svgEl("path", {
           class: "sf-edge sf-edge-order" + (port.dashed ? " sf-dashed" : ""),
@@ -521,6 +516,16 @@ export class CanvasView {
       this.svg.append(path);
     }
     this.#applyHover(); // the cursor may have stayed on a card
+  }
+
+  /** Light the path of a variable from OUTSIDE the canvas: the variable index
+   * in the panel hovers the graph the same way a row on a card does. Cleared
+   * with `null`, and the next move of the cursor over the canvas overrides it
+   * anyway. */
+  highlightVariable(name) {
+    if (this.#hover.key === (name ?? null)) return;
+    this.#hover = { ...this.#hover, key: name ?? null };
+    this.#applyHover();
   }
 
   /** Remembers what is under the cursor and repaints the data layer on change. */
@@ -806,7 +811,7 @@ export class CanvasView {
       update: (ev) => {
         const rect = this.host.getBoundingClientRect();
         const to = this.view.toWorld(ev.clientX, ev.clientY, rect);
-        temp.setAttribute("d", vertical ? this.#vPath(from, to) : this.#hPath(from, to));
+        temp.setAttribute("d", vertical ? orderEdgePath(from, to) : this.#hPath(from, to));
       },
       remove: () => temp.remove(),
     };

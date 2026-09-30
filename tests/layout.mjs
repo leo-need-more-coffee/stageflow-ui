@@ -6,6 +6,9 @@
  *  1. no foreign node falls inside the frame of an area (otherwise it looks as
  *     if `try` catches its errors too, and `parallel` runs it in a branch);
  *  2. the cards do not climb onto one another;
+ *  3. an order edge that steps OVER an area does not run across the cards
+ *     inside it — a wire hidden behind a card is a wire that cannot be seen,
+ *     hovered or cut, and the card it hides behind looks like its target;
  *
  * plus idempotence: laying out again must move nothing.
  *
@@ -13,8 +16,8 @@
  */
 import "./_catalog.mjs";
 import { autoLayout } from "../js/model.js";
-import { computeRegions, regionBounds } from "../js/regions.js";
-import { nodeLayout } from "../js/geometry.js";
+import { computeRegions, regionBounds, skippedArea } from "../js/regions.js";
+import { nodeLayout, orderEdgePath } from "../js/geometry.js";
 
 let seed = 12345;
 const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;
@@ -66,20 +69,84 @@ function randomPipeline(budget) {
   return { entry, nodes };
 }
 
+/** The points of a path of the shape `M … C …` or `M … C … L … C …` — the only
+ * two `orderEdgePath` produces. The numbers are read in order, so a command
+ * consumes as many as it takes. */
+function samplePath(d, per = 24) {
+  const tokens = d.match(/[MCL]|-?\d+(?:\.\d+)?/g) ?? [];
+  const points = [];
+  let at = null;
+  let i = 0;
+  const num = () => Number(tokens[i++]);
+  while (i < tokens.length) {
+    const cmd = tokens[i++];
+    if (cmd === "M") { at = { x: num(), y: num() }; points.push(at); continue; }
+    if (cmd === "L") {
+      const to = { x: num(), y: num() };
+      for (let k = 1; k <= per; k += 1) {
+        points.push({ x: at.x + (to.x - at.x) * (k / per), y: at.y + (to.y - at.y) * (k / per) });
+      }
+      at = to;
+      continue;
+    }
+    const p1 = { x: num(), y: num() };
+    const p2 = { x: num(), y: num() };
+    const p3 = { x: num(), y: num() };
+    for (let k = 1; k <= per; k += 1) {
+      const t = k / per;
+      const u = 1 - t;
+      points.push({
+        x: u * u * u * at.x + 3 * u * u * t * p1.x + 3 * u * t * t * p2.x + t * t * t * p3.x,
+        y: u * u * u * at.y + 3 * u * u * t * p1.y + 3 * u * t * t * p2.y + t * t * t * p3.y,
+      });
+    }
+    at = p3;
+  }
+  return points;
+}
+
 function violations(graph) {
   const found = [];
   const size = new Map(graph.nodes.map((n) => [n.id, nodeLayout(n)]));
+  const byId = new Map(graph.nodes.map((n) => [n.id, n]));
   const box = (node) => ({ ...node.metadata.ui, ...size.get(node.id) });
   const overlap = (a, b) => a.x < b.x + b.width && a.x + a.width > b.x
     && a.y < b.y + b.height && a.y + a.height > b.y;
+  const inside = (p, b) => p.x > b.x && p.x < b.x + b.width && p.y > b.y && p.y < b.y + b.height;
 
-  for (const region of computeRegions(graph, null)) {
+  const regions = computeRegions(graph, null);
+  for (const region of regions) {
     const frame = regionBounds(region, graph, (n) => size.get(n.id));
     if (!frame) continue;
+    region.box = frame; // `skippedArea` asks the regions for their bounds, as the canvas does
     for (const node of graph.nodes) {
       if (region.members.has(node.id) || node.id === region.ownerId) continue;
       if (overlap(box(node), frame)) found.push(`foreign ${node.id} inside the frame of ${region.ownerId}`);
     }
+  }
+
+  for (const node of graph.nodes) {
+    const layout = size.get(node.id);
+    layout.orders.forEach((port, index) => {
+      const targetId = port.get?.();
+      const target = targetId && byId.get(targetId);
+      if (!target) return;
+      const from = { x: node.metadata.ui.x + layout.orderOut(index).dx,
+        y: node.metadata.ui.y + layout.orderOut(index).dy };
+      const to = { x: target.metadata.ui.x + size.get(targetId).orderIn.dx,
+        y: target.metadata.ui.y + size.get(targetId).orderIn.dy };
+      const skipped = skippedArea(regions, node.id, targetId, from, to);
+      if (!skipped) return;
+      const points = samplePath(orderEdgePath(from, to, skipped));
+      for (const member of regions.filter((r) => r.ownerId === node.id
+        && !r.members.has(targetId))) {
+        for (const id of member.members) {
+          if (points.some((p) => inside(p, box(byId.get(id))))) {
+            found.push(`edge ${node.id}.${port.key} -> ${targetId} runs across ${id}`);
+          }
+        }
+      }
+    });
   }
   for (const a of graph.nodes) {
     for (const b of graph.nodes) {

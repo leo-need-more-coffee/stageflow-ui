@@ -13,7 +13,7 @@
  * Run: node tests/rows.mjs
  */
 import "./_catalog.mjs";
-import { KINDS, formatLiteral, parseLiteral } from "../js/kinds.js";
+import { KINDS, celExpr, celSource, formatLiteral, parseLiteral } from "../js/kinds.js";
 
 let failed = 0;
 let checked = 0;
@@ -66,7 +66,71 @@ for (const value of [" ", "  x  ", "5", "true", "null", '["a"]', "text", ""]) {
   }
 }
 
+// ------------------------------- CEL fields: the source survives the trip
+
+/**
+ * `condition`, the `when` of a case and the `items` of a loop keep CEL and
+ * nothing else in the JSON, so the panel reads the source back out of the text.
+ * What must hold: whatever the form writes, the form reads the same way — the
+ * mode must not jump from under the cursor, and the value must not change
+ * meaning between two openings of the panel.
+ */
+for (const [source, value] of [
+  ["vars", "x"], ["vars", "итог"], ["vars", "count_2"],
+  ["const", "5"], ["const", "true"], ["const", "null"], ["const", "text"],
+  ["const", '["a","b"]'], ["const", '{"k":1}'],
+  ["cel", "vars.count > 0"], ["cel", "size(vars.xs) != 0"], ["cel", '"42"'],
+]) {
+  const expr = celExpr(source, value);
+  const back = celSource(expr);
+  checked++;
+  if (back.source !== source || back.value !== value) {
+    failed++;
+    console.error(`✗ ${source} ${JSON.stringify(value)} -> ${JSON.stringify(expr)}`
+      + ` reads back as ${back.source} ${JSON.stringify(back.value)}`);
+  }
+  // and the text itself is stable: opening the panel twice writes nothing new
+  checked++;
+  if (celExpr(back.source, back.value) !== expr) {
+    failed++;
+    console.error(`✗ ${JSON.stringify(expr)} is rewritten on a second reading`);
+  }
+}
+
+// a value of nothing but spaces clears the field: these three fields are a
+// condition, a predicate and a list, and for none of them is " " a setting. The
+// string itself is still sayable — as the expression `" "`
+for (const blank of ["", "   "]) {
+  checked++;
+  if (celExpr("const", blank) !== "") {
+    failed++;
+    console.error(`✗ a value of ${JSON.stringify(blank)} does not clear the field`);
+  }
+}
+
+// an empty expression names no source at all: the panel shows such a field as
+// "not set", as it shows an unfilled stage argument, and only falls back to
+// this answer where there is no picker to remember a choice
+for (const empty of ["", "   ", null, undefined]) {
+  checked++;
+  if (celSource(empty).source !== "vars" || celSource(empty).value !== "") {
+    failed++;
+    console.error(`✗ an empty expression ${JSON.stringify(empty)} is not an empty variable`);
+  }
+}
+
+// what somebody else wrote by hand stays exactly as written
+for (const written of ["vars.a && vars.b", "[1, 2]", "'ключ'", "vars.x.y"]) {
+  checked++;
+  const back = celSource(written);
+  if (celExpr(back.source, back.value) !== written) {
+    failed++;
+    console.error(`✗ a hand-written ${JSON.stringify(written)} is changed by a reading:`
+      + ` got ${JSON.stringify(celExpr(back.source, back.value))}`);
+  }
+}
+
 console.log(failed
   ? `\nchecks failed: ${failed}`
-  : `table editors: ${checked} checks, rows and literals are not lost`);
+  : `table editors: ${checked} checks, rows, literals and CEL sources are not lost`);
 process.exit(failed ? 1 : 0);

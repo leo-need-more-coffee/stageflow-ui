@@ -10,6 +10,7 @@
  * edge and the area is recomputed. This is exactly how the core computes the
  * scope of a `try` block (see TryNode.scope).
  */
+import { crossesBox } from "./geometry.js";
 import { kindOf } from "./kinds.js";
 
 /** Nodes reachable along order edges from `starts`, not entering `stopAt`. */
@@ -90,5 +91,41 @@ export function regionBounds(region, graph, layoutOf, padding = 20, labelSpace =
     y: minY - padding - labelSpace,
     width: maxX - minX + padding * 2,
     height: maxY - minY + padding * 2 + labelSpace,
+  };
+}
+
+/**
+ * The area an order edge STEPS OVER: the body of a loop for its `next`, the
+ * body of a `try` for what comes after the block.
+ *
+ * Drawn straight, such an edge runs behind the cards of the body — the exit of
+ * the block disappears from the canvas and the first node of the body is left
+ * with two wires coming in, one of which is not its own. `orderEdgePath` takes
+ * the answer and goes around.
+ *
+ * Only the areas of this very node count, only those the target is not inside
+ * of (an edge into the body enters its area, it does not skip it), and only
+ * those actually in the way: the `except` handlers of a `try` stand beside the
+ * body rather than under it, and counting them in would send the way around
+ * the far side of the whole block for nothing. What is left is taken as one
+ * box — an edge that steps over several areas steps over all of them.
+ *
+ * @param regions — as `computeRegions` returns them, each with a `box`
+ */
+export function skippedArea(regions, ownerId, targetId, from, to) {
+  const boxes = (regions ?? [])
+    .filter((r) => r.ownerId === ownerId && r.box && !r.members.has(targetId))
+    .map((r) => ({
+      ...r.box,
+      right: r.box.x + r.box.width,
+      bottom: r.box.y + r.box.height,
+    }))
+    .filter((box) => crossesBox(from, to, box));
+  if (!boxes.length) return null;
+  return {
+    x: Math.min(...boxes.map((b) => b.x)),
+    y: Math.min(...boxes.map((b) => b.y)),
+    right: Math.max(...boxes.map((b) => b.right)),
+    bottom: Math.max(...boxes.map((b) => b.bottom)),
   };
 }

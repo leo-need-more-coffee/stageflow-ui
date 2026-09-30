@@ -1,5 +1,6 @@
 /**
- * Geometry of a node card — the single source of truth about sizes.
+ * Geometry of the canvas: the size of a node card and the path of an order
+ * edge — the single source of truth about both.
  *
  * Used both by rendering (canvas.js) and by auto-layout (model.js), which is
  * why it lives apart from the presentation. The constants agree with
@@ -56,4 +57,53 @@ export function nodeLayout(node, showData = true, env = null) {
       dy: dataTop + (ins.length + values.length + j) * DATA_ROW_H + DATA_ROW_H / 2,
     }),
   };
+}
+
+/** The lane an edge takes around an area it steps over: how far outside the
+ * frame the straight run goes. */
+const LANE = 28;
+
+/** Does the straight edge a→b run across `box`?
+ *
+ * Only the corridor between the two ends is asked about, widened a little for
+ * the bulge of the bézier: an edge that leaves to the side of an area passes
+ * nowhere near it, and must not be rerouted for nothing. */
+export function crossesBox(a, b, box) {
+  if (!box) return false;
+  if (Math.max(a.y, b.y) <= box.y || Math.min(a.y, b.y) >= box.bottom) return false;
+  return Math.max(a.x, b.x) + 10 > box.x && Math.min(a.x, b.x) - 10 < box.right;
+}
+
+/**
+ * The path of an order edge: a vertical bézier, and around `box` when the
+ * straight one would cross it.
+ *
+ * `box` is the area the edge STEPS OVER — the body of a loop for its `next`,
+ * the whole block for what comes after a `try`. Drawn straight, such an edge
+ * goes behind the cards of the body: the exit of the loop disappears, and the
+ * first node of the body is left with two wires coming in, one of which is not
+ * its own. The way around is drawn along the nearer side of the frame, so the
+ * edge stays visible, hoverable and cuttable over its whole length.
+ */
+export function orderEdgePath(a, b, box = null) {
+  if (!crossesBox(a, b, box)) {
+    const dy = Math.max(48, Math.abs(b.y - a.y) / 2);
+    return `M ${a.x} ${a.y} C ${a.x} ${a.y + dy}, ${b.x} ${b.y - dy}, ${b.x} ${b.y}`;
+  }
+  const right = box.right + LANE;
+  const left = box.x - LANE;
+  // the shorter detour wins — usually the side the port is already on
+  const lane = Math.abs(right - a.x) + Math.abs(right - b.x)
+    <= Math.abs(left - a.x) + Math.abs(left - b.x) ? right : left;
+
+  // the straight run covers exactly the height of the frame, so the curved
+  // ends stay outside it
+  const enter = Math.max(a.y + 12, Math.min(box.y, b.y - 12));
+  const exit = Math.min(b.y - 12, Math.max(box.bottom, a.y + 12));
+  if (exit <= enter) return orderEdgePath(a, b, null);
+
+  return `M ${a.x} ${a.y}`
+    + ` C ${a.x} ${a.y + 14}, ${lane} ${enter - 14}, ${lane} ${enter}`
+    + ` L ${lane} ${exit}`
+    + ` C ${lane} ${exit + 14}, ${b.x} ${b.y - 14}, ${b.x} ${b.y}`;
 }

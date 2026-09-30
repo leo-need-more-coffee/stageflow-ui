@@ -68,7 +68,7 @@ hides the bookkeeping:
 
 | section | what is inside |
 |---|---|
-| no heading | the main field of the node kind: the stage, the CEL condition, the branches, the handlers |
+| no heading | the main field of the node kind: the stage, the condition, the branches, the handlers |
 | **What it gets** | a row per argument **declared by the stage spec** |
 | **What it gives** | a row per result field: a "save it" checkbox plus the variable |
 | **Next** | the order ports of the node (`next`, `then`/`else`, `body`, `default`) as node lists |
@@ -123,6 +123,30 @@ Three things that fixes:
   a literal setting is a `const` argument), so "empty, but perhaps it comes
   from the settings" no longer happens.
 
+The expression fields of the node kinds themselves — the `condition` of a
+`condition`, the `when` of a case, the `items` of a loop — are filled the same
+way, with the same three sources. The core evaluates them with CEL and accepts
+nothing else, so unlike a stage argument they cannot keep the source as a shape
+in the JSON: `celSource()` reads it back out of the text (`vars.x` is a
+variable, `["a","b"]` is a value, anything else is an expression) and
+`celExpr()` writes it in. Until then the only way to walk a list was to type
+`vars.` by hand, and a ready-made list could not be said at all. A dropped
+variable lands in them too: on a `condition` it becomes the condition, on a
+`switch` a new branch.
+
+Such a field has the same four states a stage argument has, "not set" included,
+and picking **variable** on an unnamed one binds it to a variable named after
+the field (`items \u2190 items`) — the same default `parts \u2190 parts` is. That
+is not cosmetics: until the JSON names a variable the card grows no port, and a
+port is what a wire is attached to. The label of the port names the field, so
+what it feeds is visible on the card rather than only in the panel.
+
+One thing the panel has to remember for this: the source picked by hand.
+`vars.count` on the way to `vars.count > 0` reads as a bare variable — without
+remembering, "expression" snapped back to "variable" mid-typing. The choice
+holds while the text still fits it; an expression fits any text and holds until
+it is changed back by hand.
+
 The port labels in "Next" are human (`if yes` / `if no` / `block body`), with
 the JSON key next to them in small type, so that the format is still visible.
 The list of ports is assembled by the inspector from `orderPorts()`, so a node
@@ -131,6 +155,32 @@ kind does not have to duplicate `then`/`else`/`next` as separate fields — for
 
 The section is set by the `group` field of a descriptor (`main` / `in` / `out`
 / `more`), the order by the `GROUPS` constant in `js/inspector.js`.
+
+## With nothing selected: the variable index
+
+The same panel with no selection used to hold a catalogue of canvas gestures —
+eleven lines of instructions in the one place a reader has already stopped
+looking for them. They are still written down, folded away at the bottom
+("how to assemble a graph"), and the space belongs to the graph itself: how many
+nodes and links it has, which node it starts at (a button — that is the first
+node anybody looks for), and the list of its variables.
+
+The index is the thing the canvas cannot show on its own. The memory of
+StageFlow is a shared frame, so a variable is not a wire between two cards but a
+name, and on the canvas that name is scattered over as many rows as there are
+nodes touching it. Gathered into one list, `name — who writes it → who reads
+it`, it also shows the two mistakes nothing else catches: a variable **nobody
+writes** (marked in red: the reader will get nothing) and one **nobody reads**
+(the write is dead weight). Neither is invalid JSON, so validation is silent
+about both, and both are ordinary while a graph is half-assembled — which is why
+they are a mark in a list rather than an error in the status bar.
+
+Hovering a line lights that variable's path on the canvas — the same highlight
+hovering a row on a card gives, from the other end (`highlightVariable()` on the
+canvas, reached through `env.highlightVar`). Together with the colour of the dot,
+which is the colour of that variable's wires, the panel reads as a legend to the
+picture. A node name in the list is a button: it selects that node, and the
+panel turns into its form.
 
 ## What makes a node recognisable
 
