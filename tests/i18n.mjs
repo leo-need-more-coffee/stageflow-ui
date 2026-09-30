@@ -108,6 +108,23 @@ const source = catalogs[FALLBACK];
   check(computed.size > 0, "no computed keys found at all — has the scan stopped working?");
 }
 
+{ // the catalogs reach the browser at all
+  // The page fetches `i18n/<tag>.json` at runtime, and a fetch that 404s is not
+  // a crash: `t` returns the key, on purpose. That mercy hid a deploy which
+  // copied `index.html css js` and nothing else — the hosted editor came up
+  // with a toolbar reading "bar.file bar.edit" and every label a key. Nothing
+  // in the test suite could see it, because the files were all correct; only
+  // the list of what gets published was wrong.
+  const pages = readFileSync(dir("../.github/workflows/pages.yml"), "utf8");
+  const copy = pages.match(/cp -r ([^\n]*) _site\//)?.[1] ?? "";
+  for (const needed of ["index.html", "css", "js", "i18n"]) {
+    check(copy.split(/\s+/).includes(needed),
+      `the pages workflow does not publish ${needed}: "cp -r ${copy} _site/"`);
+  }
+  check(/^\s+- "i18n\/\*\*"$/m.test(pages),
+    "a change to the catalogs alone does not trigger the pages deploy");
+}
+
 { // a translation answers the source language and does not invent keys
   const plural = (value) => value !== null && typeof value === "object";
   for (const [tag, entries] of Object.entries(catalogs)) {

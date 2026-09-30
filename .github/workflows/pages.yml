@@ -7,6 +7,7 @@ on:
       - "index.html"
       - "css/**"
       - "js/**"
+      - "i18n/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -32,7 +33,10 @@ jobs:
       - name: Take only what the browser needs
         run: |
           mkdir -p _site
-          cp -r index.html css js _site/
+          # i18n included: the page fetches its catalogs at runtime, and without
+          # them every t() falls through to its own key — a toolbar reading
+          # "bar.file bar.edit". tests/i18n.mjs guards this list.
+          cp -r index.html css js i18n _site/
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
