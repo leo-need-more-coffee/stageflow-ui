@@ -22,6 +22,7 @@
  *              expression", the variable name out of those already in the graph;
  *   stage-spec  — the stage reference.
  */
+import { varColor } from "./colors.js";
 import { variablesOf } from "./dataflow.js";
 import { t, tn } from "./i18n.js";
 import { paintIcon } from "./icons.js";
@@ -64,6 +65,9 @@ export class Inspector {
    * the way to `vars.count > 0`, reads as the wrong one. Without this, "value"
    * and "expression" snapped back the moment they were picked. */
   #valueMode = new Map();
+  /** Whether the "how to assemble a graph" fold is open. The panel is rebuilt
+   * on every edit, and a <details> rebuilt is a <details> shut. */
+  #howToOpen = false;
 
   constructor(host, env) {
     this.host = host;
@@ -124,21 +128,135 @@ export class Inspector {
 
   // ------------------------------------------------------------ sections
 
+  /**
+   * The panel with nothing selected: what this graph IS, not how to use the
+   * editor.
+   *
+   * It used to hold the whole catalogue of canvas gestures — eleven lines of
+   * instructions in the one place a reader has already stopped looking for
+   * instructions. They are still written down (a fold at the bottom), but the
+   * space belongs to the graph itself: where it starts and which variables run
+   * through it, which is the one thing the canvas cannot show on its own.
+   */
   #renderOverview() {
     const { model } = this.env;
+    const graph = model.graph;
     this.host.append(el("h3", "", t("panel.pipeline")));
     const graphName = model.graphKey === null
       ? t("panel.rootGraph")
       : t("panel.subGraph", { id: model.graphKey });
+    const edges = graph.nodes.reduce((n, node) =>
+      n + kindOf(node).orderPorts(node).filter((port) => port.get?.()).length, 0);
     this.host.append(el("p", "sf-muted", t("panel.graphStats", {
-      graph: graphName, nodes: model.graph.nodes.length, entry: model.graph.entry || "—",
+      graph: graphName, nodes: graph.nodes.length, edges,
     })));
-    this.host.append(el("p", "sf-muted", t("panel.legend")));
 
-    // the panel with nothing selected is the one place there is room to write
-    // WHAT a graph is assembled with: otherwise the canvas gestures have to be
-    // guessed
-    this.host.append(el("div", "sf-section-title", t("panel.howTo")));
+    // where the run begins: a button, because the entry node is the first one
+    // anybody looks for and hunting for it on the canvas is the wrong game
+    const entry = el("p", "sf-muted sf-var-line");
+    if (graph.entry && graph.nodes.some((n) => n.id === graph.entry)) {
+      entry.append(t("panel.entryIs"), this.#nodeChip(graph.entry));
+    } else {
+      entry.append(el("span", "sf-var-bad", t("panel.entryUnset")));
+    }
+    this.host.append(entry);
+
+    this.#renderVarIndex(graph);
+    this.#renderHowTo();
+  }
+
+  /**
+   * The variables of the graph: who writes each one and who reads it.
+   *
+   * The memory of StageFlow is a shared frame, so a variable is not a wire but
+   * a name — and on the canvas that name is scattered over as many card rows as
+   * there are nodes touching it. Gathered in one list it also shows the two
+   * mistakes nothing else catches: a variable nobody writes (the reader gets
+   * nothing) and one nobody reads (the write is dead weight). Neither is
+   * invalid JSON, so validation stays silent about both.
+   */
+  #renderVarIndex(graph) {
+    const index = new Map();
+    const side = (name, key) => {
+      if (!index.has(name)) index.set(name, { writers: [], readers: [] });
+      return index.get(name)[key];
+    };
+    const add = (name, key, id) => {
+      const list = side(name, key);
+      if (!list.includes(id)) list.push(id);
+    };
+    for (const node of graph.nodes) {
+      const kind = kindOf(node);
+      for (const out of kind.dataOuts(node)) add(out.variable.name, "writers", node.id);
+      for (const port of kind.dataIns(node)) {
+        for (const ref of port.refs ?? []) add(ref.name, "readers", node.id);
+      }
+    }
+
+    const names = [...index.keys()].sort((a, b) => a.localeCompare(b));
+    this.host.append(el("div", "sf-section-title",
+      t("panel.vars", { n: names.length })));
+    if (!names.length) {
+      this.host.append(el("p", "sf-muted", t("panel.varsNone")));
+      return;
+    }
+    this.host.append(el("p", "sf-muted", t("panel.varFlow")));
+    const list = el("div", "sf-vars");
+    list.title = t("panel.varHover");
+    for (const name of names) list.append(this.#varRow(name, index.get(name)));
+    this.host.append(list);
+  }
+
+  /** One line of the index: the colour the wires of this name have on the
+   * canvas, the name, then its writers and readers. Hovering the line lights
+   * that variable's path on the canvas — the same highlight hovering a row on a
+   * card gives, from the other end. */
+  #varRow(name, { writers, readers }) {
+    const row = el("div", "sf-var-item");
+    row.dataset.var = name;
+    const dot = el("span", "sf-var-dot");
+    dot.style.background = varColor(name);
+    row.append(dot, el("span", "sf-var-name", name));
+
+    const flow = el("span", "sf-var-flow");
+    for (const id of writers) flow.append(this.#nodeChip(id));
+    if (!writers.length) flow.append(this.#varNone(t("panel.varNoWriter"), true));
+    flow.append(el("span", "sf-rows-arrow", "→"));
+    for (const id of readers) flow.append(this.#nodeChip(id));
+    if (!readers.length) flow.append(this.#varNone(t("panel.varNoReader")));
+    row.append(flow);
+
+    row.onmouseenter = () => this.env.highlightVar?.(name);
+    row.onmouseleave = () => this.env.highlightVar?.(null);
+    return row;
+  }
+
+  /** The missing half of a flow: a dash that says what is missing on hover.
+   * `bad` is for the half that is a mistake rather than merely empty. */
+  #varNone(title, bad = false) {
+    const mark = el("span", bad ? "sf-var-none sf-var-bad" : "sf-var-none", "—");
+    mark.title = title;
+    return mark;
+  }
+
+  /** A node name as a "show me this one" button. */
+  #nodeChip(id) {
+    const chip = el("button", "sf-tag", id);
+    chip.title = t("panel.showNode");
+    chip.onclick = () => this.env.selection.set({ type: "node", id });
+    return chip;
+  }
+
+  /** The gestures of the canvas, folded away. They have to be written
+   * somewhere — nothing on the canvas says a wire can be pulled out of a port —
+   * but they are read once and are in the way ever after, so the fold stays
+   * closed until asked and remembers being opened across redraws. */
+  #renderHowTo() {
+    const box = el("details", "sf-more sf-howto");
+    box.open = this.#howToOpen;
+    box.ontoggle = () => { this.#howToOpen = box.open; };
+    box.append(el("summary", "sf-section-title", t("panel.howTo")));
+    box.append(el("p", "sf-muted", t("panel.legend")));
     const tips = el("ul", "sf-tips");
     // as many tips as the catalog holds: a translation may merge two of them
     // or add one, and neither should mean editing this loop
@@ -148,7 +266,8 @@ export class Inspector {
       if (text === key) break;
       tips.append(el("li", "", text));
     }
-    this.host.append(tips);
+    box.append(tips);
+    this.host.append(box);
   }
 
   /** A group selection: "five nodes" have no common form, so the panel shows
@@ -158,12 +277,7 @@ export class Inspector {
     this.host.append(el("h3", "", tn("panel.selected", sel.ids.length)));
     this.host.append(el("p", "sf-muted", t("panel.selected.about")));
     const box = el("div", "sf-tags");
-    for (const id of sel.ids) {
-      const tag = el("button", "sf-tag", id);
-      tag.title = t("panel.showNode");
-      tag.onclick = () => this.env.selection.set({ type: "node", id });
-      box.append(tag);
-    }
+    for (const id of sel.ids) box.append(this.#nodeChip(id));
     this.host.append(box);
 
     const remove = el("button", "sf-btn sf-danger", t("panel.deleteSelected"));

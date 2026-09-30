@@ -1032,7 +1032,62 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 
 .sf-menu-empty { padding: 8px; font-size: 11.5px; color: var(--ink-faint); }
 
-/* the "how to assemble a graph" tips in the panel with nothing selected */
+/* ---- the panel with nothing selected: the variable index of the graph ---- */
+
+/* a line of the index and the "starts at" line above it: a name and, pushed to
+   the far edge, who passes it to whom */
+.sf-var-line,
+.sf-var-item {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+
+.sf-vars { display: flex; flex-direction: column; gap: 1px; }
+
+.sf-var-item {
+  padding: 3px 5px;
+  border-radius: 5px;
+  cursor: default;
+}
+
+/* the row answers the hover: the same variable lights up on the canvas, and
+   without this the highlight would come from nowhere */
+.sf-var-item:hover { background: var(--well); }
+
+.sf-var-dot {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.sf-var-name {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink);
+}
+
+/* writers, an arrow, readers — right-aligned, so the names of the variables
+   stay a readable column on the left */
+.sf-var-flow {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-left: auto;
+}
+
+/* a node chip here has no × to leave room for */
+.sf-var-flow .sf-tag,
+.sf-var-line .sf-tag { padding: 1px 6px; }
+
+.sf-var-none { color: var(--ink-faint); cursor: help; }
+.sf-var-bad { color: var(--danger); cursor: help; }
+
+/* the "how to assemble a graph" tips, inside the fold at the bottom of the
+   panel with nothing selected */
 .sf-tips {
   margin: 4px 0 0;
   padding-left: 16px;

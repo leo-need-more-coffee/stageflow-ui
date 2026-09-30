@@ -497,6 +497,8 @@ export class Editor extends EventTarget {
       backend: this.backend,
       // what that backend can run — the palette dims what it cannot
       capabilities: this.capabilities,
+      // the variable index in the panel lights the graph as it is hovered
+      highlightVar: (name) => this.canvas?.highlightVariable(name),
       // panning and zooming do not change the model, but they do change the
       // session state
       onView: () => this.#persist(),

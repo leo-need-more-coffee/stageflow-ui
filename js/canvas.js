@@ -518,6 +518,16 @@ export class CanvasView {
     this.#applyHover(); // the cursor may have stayed on a card
   }
 
+  /** Light the path of a variable from OUTSIDE the canvas: the variable index
+   * in the panel hovers the graph the same way a row on a card does. Cleared
+   * with `null`, and the next move of the cursor over the canvas overrides it
+   * anyway. */
+  highlightVariable(name) {
+    if (this.#hover.key === (name ?? null)) return;
+    this.#hover = { ...this.#hover, key: name ?? null };
+    this.#applyHover();
+  }
+
   /** Remembers what is under the cursor and repaints the data layer on change. */
   #onHover(target) {
     // the ⊕ on the edge under the cursor — insert a node into it; the button

@@ -156,6 +156,32 @@ kind does not have to duplicate `then`/`else`/`next` as separate fields — for
 The section is set by the `group` field of a descriptor (`main` / `in` / `out`
 / `more`), the order by the `GROUPS` constant in `js/inspector.js`.
 
+## With nothing selected: the variable index
+
+The same panel with no selection used to hold a catalogue of canvas gestures —
+eleven lines of instructions in the one place a reader has already stopped
+looking for them. They are still written down, folded away at the bottom
+("how to assemble a graph"), and the space belongs to the graph itself: how many
+nodes and links it has, which node it starts at (a button — that is the first
+node anybody looks for), and the list of its variables.
+
+The index is the thing the canvas cannot show on its own. The memory of
+StageFlow is a shared frame, so a variable is not a wire between two cards but a
+name, and on the canvas that name is scattered over as many rows as there are
+nodes touching it. Gathered into one list, `name — who writes it → who reads
+it`, it also shows the two mistakes nothing else catches: a variable **nobody
+writes** (marked in red: the reader will get nothing) and one **nobody reads**
+(the write is dead weight). Neither is invalid JSON, so validation is silent
+about both, and both are ordinary while a graph is half-assembled — which is why
+they are a mark in a list rather than an error in the status bar.
+
+Hovering a line lights that variable's path on the canvas — the same highlight
+hovering a row on a card gives, from the other end (`highlightVariable()` on the
+canvas, reached through `env.highlightVar`). Together with the colour of the dot,
+which is the colour of that variable's wires, the panel reads as a legend to the
+picture. A node name in the list is a button: it selects that node, and the
+panel turns into its form.
+
 ## What makes a node recognisable
 
 Five independent signs, so that a node reads at a glance without opening the
