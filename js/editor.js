@@ -712,8 +712,8 @@ export class Editor extends EventTarget {
    * question and belongs beside them rather than in a corner of its own.
    * Falsy text removes the owner's chip.
    */
-  setStatusNote(owner, text, title = "") {
-    if (text) this.#notes.set(owner, { text, title });
+  setStatusNote(owner, text, title = "", onClick = null) {
+    if (text) this.#notes.set(owner, { text, title, onClick });
     else this.#notes.delete(owner);
     this.#renderStatus();
   }
@@ -741,9 +741,13 @@ export class Editor extends EventTarget {
       this.statusEl.append(badge);
     }
     for (const [owner, note] of this.#notes) {
-      const chip = el("span", `sf-status-note sf-status-${owner}`);
+      // a button only when there is something to do about it: a chip that
+      // looks pressable and is not is worse than one that plainly is not
+      const chip = el(note.onClick ? "button" : "span",
+        `sf-status-note sf-status-${owner}${note.onClick ? " sf-status-act" : ""}`);
       chip.textContent = note.text;
       if (note.title) chip.title = note.title;
+      if (note.onClick) chip.onclick = note.onClick;
       this.statusEl.append(chip);
     }
     if (!this.issues.length) {

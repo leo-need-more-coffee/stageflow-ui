@@ -1928,6 +1928,14 @@ button.sf-tag:hover { border-color: var(--accent); color: var(--ink); }
   cursor: help;
 }
 
+/* a chip that does something when clicked says so by the cursor alone */
+.sf-status-act {
+  cursor: pointer;
+  font: inherit;
+}
+
+.sf-status-act:hover { border-color: var(--accent-bright); }
+
 .sf-status-bridge {
   border-color: var(--accent-soft);
   background: var(--accent-soft);

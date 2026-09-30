@@ -35,16 +35,50 @@ import { EventStream } from "./sse.js";
 const SETTLE_MS = 500;
 
 /**
+ * What this tab remembers about a bridge: the token, and how far it has read.
+ *
+ * `sessionStorage` rather than the address bar or `localStorage`, and the
+ * choice is the whole of the security here. The address bar would put the
+ * token in the history, in a bookmark made by accident and on screen;
+ * `localStorage` would leave it on the machine after the tab is gone and share
+ * it with every other tab. Session storage dies with the tab, which is exactly
+ * as long as a bridge lives.
+ *
+ * Without this a reload ends the connection: the token was taken out of the
+ * address on purpose, so after F5 there is nothing left to authenticate with
+ * and the feature is gone until somebody digs the link out of a chat log.
+ */
+function remembered(url) {
+  try {
+    return JSON.parse(sessionStorage.getItem(`sf-bridge:${url}`) ?? "null") ?? {};
+  } catch {
+    return {}; // private mode, a policy, a full quota — the bridge still works once
+  }
+}
+
+function remember(url, patch) {
+  try {
+    const now = { ...remembered(url), ...patch };
+    sessionStorage.setItem(`sf-bridge:${url}`, JSON.stringify(now));
+  } catch {
+    // not being able to remember costs a reconnection, not a session
+  }
+}
+
+/**
  * The bridge asked for in the page's address, or null.
  *
  * @param search `location.search`
  * @param hash   `location.hash` — where the token is
  */
 export function bridgeFromUrl(search, hash) {
-  const url = new URLSearchParams(search).get("bridge");
-  if (!url) return null;
-  const token = new URLSearchParams((hash || "").replace(/^#/, "")).get("bridge-token");
-  return { url: url.replace(/\/+$/, ""), token: token || "" };
+  const raw = new URLSearchParams(search).get("bridge");
+  if (!raw) return null;
+  const url = raw.replace(/\/+$/, "");
+  const fromHash = new URLSearchParams((hash || "").replace(/^#/, "")).get("bridge-token");
+  // the link carries the token once; a reload has only what the tab kept
+  const token = fromHash || remembered(url).token || "";
+  return { url, token };
 }
 
 /**
@@ -62,9 +96,18 @@ export function hideToken() {
   history.replaceState(null, "", `${location.pathname}${location.search}${tail ? `#${tail}` : ""}`);
 }
 
+/** How long to wait before trying a bridge again, in seconds, and then every
+ * 30 until the attempts run out. An agent's process comes back when its next
+ * session starts, which is usually within the first few of these. */
+const RETRY_AFTER = [3, 5, 10, 20, 30, 30, 30, 30];
+
 export class Bridge {
   #stream = null;
   #timer = null;
+  #retry = null;
+  #attempt = 0;
+  /** The change listener is attached once, however many times we reconnect. */
+  #wired = false;
   /** Set while a graph from the agent is being applied, so the change it
    * causes is not posted straight back as news. */
   #applying = false;
@@ -85,21 +128,42 @@ export class Bridge {
 
   /** @returns true if something answered and it was a bridge. */
   async start() {
+    if (!this.token) {
+      this.onState?.("lost", "no token: open the link the agent printed");
+      return false;
+    }
     this.onState?.("connecting");
+    let said;
     try {
       const answer = await this.#fetch("/hello");
       if (!answer.ok) throw new Error(`HTTP ${answer.status}`);
-      const said = await answer.json();
+      said = await answer.json();
       if (said?.bridge !== "stageflow") throw new Error("not a StageFlow bridge");
     } catch (err) {
-      this.onState?.("lost", err?.message || String(err));
+      this.#lost(err?.message || String(err));
       return false;
     }
+    // it answered, so the token is good and worth keeping for a reload
+    const known = remembered(this.url);
+    const session = said?.session ?? "";
+    // a different process behind the same port has a message log of its own,
+    // starting at zero — what this tab has read says nothing about it
+    if (session && session !== known.session) {
+      remember(this.url, { token: this.token, session, seen: 0 });
+    } else {
+      remember(this.url, { token: this.token });
+    }
+    this.#attempt = 0;
+    clearTimeout(this.#retry);
 
     // tell it what is on the canvas before it asks: an agent that connected to
     // a page with a graph already open should be looking at that graph
     this.#post();
-    this.editor.addEventListener("change", () => this.#changed());
+    if (!this.#wired) {
+      this.editor.addEventListener("change", () => this.#changed());
+      this.#wired = true;
+    }
+    this.#stream?.close();
     this.#listen();
     this.onState?.("live");
     return true;
@@ -109,6 +173,40 @@ export class Bridge {
     this.#stream?.close();
     this.#stream = null;
     clearTimeout(this.#timer);
+    clearTimeout(this.#retry);
+  }
+
+  /**
+   * The bridge is not there. Say so, and quietly try again for a while.
+   *
+   * An agent is a process somebody starts, and it goes away with the session
+   * that started it — a page that gave up the first time would have to be
+   * reopened from a link that is by then somewhere in a chat log. So the
+   * attempts are spaced out and bounded: a bridge that comes back within a few
+   * minutes is picked up on its own, and one that does not stops being asked
+   * about. The chip stays a button either way.
+   */
+  #lost(reason) {
+    this.#stream = null;
+    this.onState?.("lost", reason);
+    const wait = RETRY_AFTER[this.#attempt];
+    if (wait === undefined) return;
+    this.#attempt += 1;
+    clearTimeout(this.#retry);
+    this.#retry = setTimeout(() => { this.start(); }, wait * 1000);
+  }
+
+  /**
+   * Try again after the connection was given up on.
+   *
+   * The agent's process is a thing somebody starts and stops — it goes away
+   * when a session ends and comes back with the next one. Without this a tab
+   * that saw one of those has to be reopened from a link, which by then is
+   * somewhere in a chat log.
+   */
+  reconnect() {
+    this.close();
+    return this.start();
   }
 
   #fetch(path, init = {}) {
@@ -116,15 +214,33 @@ export class Bridge {
     return fetch(`${this.url}${path}${separator}token=${encodeURIComponent(this.token)}`, init);
   }
 
+  /**
+   * Read on from where this tab stopped, not from the beginning.
+   *
+   * The stream is a log, so a reader can start anywhere — and starting at zero
+   * after a reload would re-apply every graph the agent ever pushed, the last
+   * one landing on top of whatever the person has done since. What they had
+   * would be replaced by something they had already moved past.
+   *
+   * A tab that has never seen this bridge starts at zero deliberately: a graph
+   * drawn before the editor was open is the "look what I made" case, and it
+   * should be there when the canvas finally opens.
+   */
   #listen() {
+    const from = remembered(this.url).seen ?? 0;
     this.#stream = new EventStream(`${this.url}/events?token=${encodeURIComponent(this.token)}`, {
       fetcher: (url, init) => fetch(url, init),
+      from,
       onEvent: (message) => this.#message(message),
-      onError: (err) => this.onState?.("lost", err?.message || String(err)),
+      onError: (err) => this.#lost(err?.message || String(err)),
+      // an agent's stream is not supposed to end. When it does, that process
+      // is gone — it was stopped, or its session was
+      onClose: () => this.#lost("the agent's process went away"),
     });
   }
 
   #message(message) {
+    if (typeof message?.index === "number") remember(this.url, { seen: message.index + 1 });
     if (message?.type !== "graph" || !message.pipeline) return;
     this.#applying = true;
     try {

@@ -36,13 +36,18 @@ export class EventStream {
    *                that the credential comes along
    * @param onEvent called with each parsed event object
    * @param onError called when the stream is given up on for good
+   * @param onClose called when the SERVER ended the stream. For a run that is
+   *                the run finishing; for something that should have gone on
+   *                it is the other end going away, and only the caller knows
+   *                which of the two it asked for.
    * @param from    which event to start at (0 — from the beginning)
    */
-  constructor(url, { fetcher = fetch, onEvent, onError = null, from = 0 } = {}) {
+  constructor(url, { fetcher = fetch, onEvent, onError = null, onClose = null, from = 0 } = {}) {
     this.url = url;
     this.fetcher = fetcher;
     this.onEvent = onEvent;
     this.onError = onError;
+    this.onClose = onClose;
     // the next event we have not seen; also where a reconnect resumes
     this.next = from;
     this.#run();
@@ -58,7 +63,9 @@ export class EventStream {
     while (!this.#closed) {
       try {
         await this.#read();
-        // the server closed the stream: the run is over, not a failure
+        // the server closed the stream. For a run that is the end of it and
+        // nothing has gone wrong; whoever needs to know says so with onClose
+        if (!this.#closed) this.onClose?.();
         return;
       } catch (err) {
         if (this.#closed || err?.name === "AbortError") return;

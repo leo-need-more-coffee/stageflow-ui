@@ -484,6 +484,7 @@
   "bridge.live": "AI bridge",
   "bridge.did": "AI: {note}",
   "bridge.lost": "AI bridge: lost",
+  "bridge.retry": "click to try again",
   "bridge.about": "an agent outside the browser is working on this graph: what it draws lands here, what you draw is sent back, and undo takes back anything it did",
 
   "sse.noBody": "the stream has no body"

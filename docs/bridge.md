@@ -48,6 +48,29 @@ Edits going the other way are sent after a short pause rather than on every
 keystroke — dragging a node is dozens of events, and the agent needs the result,
 not the dragging.
 
+## Reloads, and an agent that goes away
+
+Both of those happen constantly, so neither ends the connection.
+
+**A reload keeps it.** The token is taken out of the address bar as soon as it
+is read, so there would be nothing left to authenticate with — it is kept in
+the tab's own `sessionStorage` instead, which dies when the tab does. That is
+exactly as long as a bridge lives.
+
+**A reload does not undo your work.** The stream is a log, and the tab
+remembers how far it has read, so what comes back after `F5` is what happened
+since — not the agent's last graph landing on top of everything you have done
+in the meantime. A tab that has never seen this bridge does start at the
+beginning, and that is deliberate: a graph drawn before the editor was open
+should be there when it opens.
+
+**An agent's process comes and goes** — it belongs to a session, and the next
+session is a new one. When it disappears the status bar says so and the editor
+keeps trying for a few minutes, spaced further and further apart; the chip is a
+button, so it can also be told to try again now. A new process gets a new
+identity, and the tab notices and starts reading its log from the beginning
+rather than from a number that meant something to the process before it.
+
 ## The token, and why it is after the `#`
 
 The bridge is a listening socket on your machine, and any page open in the same

@@ -58,13 +58,17 @@
     connectBridge(window.editor, {
       onState: (state, detail) => {
         const said = {
-          connecting: () => [t("bridge.connecting"), t("bridge.about")],
+          connecting: () => [t("bridge.connecting"), t("bridge.about"), null],
           live: () => [detail ? t("bridge.did", { note: detail }) : t("bridge.live"),
-                       t("bridge.about")],
-          lost: () => [t("bridge.lost"), detail || ""],
+                       t("bridge.about"), null],
+          // the agent's process comes and goes with its session, so a lost
+          // bridge is a thing to try again rather than a thing to report
+          lost: () => [t("bridge.lost"),
+                       [detail, t("bridge.retry")].filter(Boolean).join("\n"),
+                       () => window.bridge?.reconnect()],
         }[state];
-        const [text, title] = said ? said() : ["", ""];
-        window.editor.setStatusNote("bridge", text, title);
+        const [text, title, act] = said ? said() : ["", "", null];
+        window.editor.setStatusNote("bridge", text, title, act);
       },
     }).then((bridge) => { if (bridge) window.bridge = bridge; });
   </script>
