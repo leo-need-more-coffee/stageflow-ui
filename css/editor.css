@@ -1644,6 +1644,18 @@ input.sf-debug-var-name { flex-basis: 110px; }
 .sf-arg-source { flex: 0 0 auto; }
 .sf-var-input { flex: 1 1 110px; min-width: 0; font-family: var(--mono); }
 
+/* the same line inside a panel field (the condition of a `condition`, the
+   `items` of a loop): without this the general "an input fills the row" rule of
+   .sf-field pushes the source picker and its value onto two lines */
+.sf-field .sf-arg-line > select,
+.sf-field .sf-arg-line > input:not([type="checkbox"]) {
+  width: auto;
+  padding: 7px 9px;
+  font-size: 12px;
+}
+
+.sf-field .sf-arg-line > input:not([type="checkbox"]) { flex: 1 1 120px; min-width: 0; }
+
 /* a literal bool argument value is a checkbox, not the text "true" */
 .sf-arg-bool {
   display: inline-flex;

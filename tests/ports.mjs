@@ -25,6 +25,7 @@ function check(what, actual, expected) {
 }
 
 const ins = (node) => kindOf(node).dataIns(node).map((p) => p.refs?.map((r) => r.name) ?? []);
+const labels = (node) => kindOf(node).dataIns(node).map((p) => p.label);
 const outs = (node) => kindOf(node).dataOuts(node).map((p) => p.variable?.name);
 
 // ------------------------------------------------- stage: arguments
@@ -103,9 +104,20 @@ check("stage: output.* in an expression is not a frame variable",
 
 // --------------------------------------------------- CEL branching
 
+// one port per FIELD, as a stage has one per argument: `condition <- f(n,flag)`
 check("condition: the condition reads the frame",
   ins({ type: "condition", condition: "vars.n > 3 && vars.flag" }),
-  [["n"], ["flag"]]);
+  [["n", "flag"]]);
+
+// what the port is FOR is on the card, not only in the panel: a wire is
+// attached to a port, and "? n" did not say which field it fed
+check("the port of an expression field is named after the field",
+  [labels({ type: "condition", condition: "vars.count" }),
+   labels({ type: "condition", condition: "vars.n > 3 && vars.flag" }),
+   labels({ type: "map", items: "vars.tickets", body: "x" }),
+   labels({ type: "switch", cases: [{ when: "vars.flag" }] })],
+  [["condition \u2190 count"], ["condition \u2190 \u0192(n,flag)"],
+   ["items \u2190 tickets"], ["when \u2190 flag"]]);
 
 check("switch: every condition reads the frame, names are not duplicated",
   ins({ type: "switch", cases: [{ when: "vars.a > 1" }, { when: "vars.a < 0" },

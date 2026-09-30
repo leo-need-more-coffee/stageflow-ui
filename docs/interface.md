@@ -68,7 +68,7 @@ hides the bookkeeping:
 
 | section | what is inside |
 |---|---|
-| no heading | the main field of the node kind: the stage, the CEL condition, the branches, the handlers |
+| no heading | the main field of the node kind: the stage, the condition, the branches, the handlers |
 | **What it gets** | a row per argument **declared by the stage spec** |
 | **What it gives** | a row per result field: a "save it" checkbox plus the variable |
 | **Next** | the order ports of the node (`next`, `then`/`else`, `body`, `default`) as node lists |
@@ -122,6 +122,30 @@ Three things that fixes:
   a stage has no second input channel (the node's `config` field was removed,
   a literal setting is a `const` argument), so "empty, but perhaps it comes
   from the settings" no longer happens.
+
+The expression fields of the node kinds themselves — the `condition` of a
+`condition`, the `when` of a case, the `items` of a loop — are filled the same
+way, with the same three sources. The core evaluates them with CEL and accepts
+nothing else, so unlike a stage argument they cannot keep the source as a shape
+in the JSON: `celSource()` reads it back out of the text (`vars.x` is a
+variable, `["a","b"]` is a value, anything else is an expression) and
+`celExpr()` writes it in. Until then the only way to walk a list was to type
+`vars.` by hand, and a ready-made list could not be said at all. A dropped
+variable lands in them too: on a `condition` it becomes the condition, on a
+`switch` a new branch.
+
+Such a field has the same four states a stage argument has, "not set" included,
+and picking **variable** on an unnamed one binds it to a variable named after
+the field (`items \u2190 items`) — the same default `parts \u2190 parts` is. That
+is not cosmetics: until the JSON names a variable the card grows no port, and a
+port is what a wire is attached to. The label of the port names the field, so
+what it feeds is visible on the card rather than only in the panel.
+
+One thing the panel has to remember for this: the source picked by hand.
+`vars.count` on the way to `vars.count > 0` reads as a bare variable — without
+remembering, "expression" snapped back to "variable" mid-typing. The choice
+holds while the text still fits it; an expression fits any text and holds until
+it is changed back by hand.
 
 The port labels in "Next" are human (`if yes` / `if no` / `block body`), with
 the JSON key next to them in small type, so that the format is still visible.

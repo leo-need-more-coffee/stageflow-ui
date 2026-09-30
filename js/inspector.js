@@ -25,7 +25,10 @@
 import { variablesOf } from "./dataflow.js";
 import { t, tn } from "./i18n.js";
 import { paintIcon } from "./icons.js";
-import { argRows, kindOf, outputRows, writeArgRows, writeOutputRows } from "./kinds.js";
+import {
+  argRows, celExpr, celSource, celVarRef, kindOf, outputRows, writeArgRows,
+  writeOutputRows,
+} from "./kinds.js";
 
 /** The panel sections top to bottom; `more` is drawn separately, collapsed. */
 const GROUPS = [
@@ -55,6 +58,12 @@ export class Inspector {
   /** Unfinished rows of the table editors: `<node id>|<field label>` -> rows.
    * They cannot be represented in JSON but must survive a redraw. */
   #drafts = new Map();
+  /** The source picked by hand for a CEL field: `<node id>|<field label>` ->
+   * vars|const|cel. The JSON keeps only the expression, so the source is read
+   * back out of the text — and an empty field, or one holding `vars.count` on
+   * the way to `vars.count > 0`, reads as the wrong one. Without this, "value"
+   * and "expression" snapped back the moment they were picked. */
+  #valueMode = new Map();
 
   constructor(host, env) {
     this.host = host;
@@ -311,6 +320,7 @@ export class Inspector {
       case "spec-args": return this.#specArgs(field);
       case "spec-outputs": return this.#specOutputs(field);
       case "rows": return this.#rowsEditor(field);
+      case "value": return this.#valueField(field);
       case "tags": return this.#tagsField(field);
       default: return this.#scalarField(field);
     }
@@ -354,6 +364,90 @@ export class Inspector {
     if (field.placeholder) input.placeholder = field.placeholder;
     this.#bindInput(input, () => { field.set(input.value.trim() || null); this.#touch(); });
     return this.#labeled(field.label, input);
+  }
+
+  /**
+   * A field whose JSON is a CEL expression, filled in the way a stage argument
+   * is: pick a source, then name a variable, type a value, or write the
+   * expression. The three sources are not three shapes in the JSON — the core
+   * evaluates these fields with CEL and nothing else — so `celSource` reads the
+   * source back out of the text and `celExpr` writes it in.
+   *
+   * Without this the only way to say "walk vars.tickets" was to type `vars.`
+   * by hand, and a plain list could not be said at all.
+   */
+  #valueField(field) {
+    const key = `${this.env.selection.current?.id ?? "-"}|${field.label}`;
+    const text = String(field.get() ?? "");
+    const read = celSource(text);
+    // the text decides what the source is — except that it cannot decide on its
+    // own while an expression is being typed (`vars.count` on the way to
+    // `vars.count > 0` reads as a bare variable). So a source picked by hand
+    // holds until the text stops fitting it; an expression fits any text and
+    // holds until it is changed back by hand. An empty field is not a source at
+    // all but "not set", exactly as an unfilled stage argument is
+    const chosen = this.#valueMode.get(key);
+    const source = text.trim()
+      ? (chosen && (chosen === "cel" || chosen === read.source) ? chosen : read.source)
+      : chosen ?? "";
+    const value = source === read.source ? read.value : text;
+    const write = (mode, next) => {
+      this.#valueMode.set(key, mode);
+      // a variable with no name yet is the field's own name — the same default a
+      // stage argument has (`parts ← parts`). Without it picking "variable"
+      // changed nothing visible: the card grew no port, and a port is what a
+      // wire is attached to
+      field.set((mode === "vars" && field.varName
+        ? celVarRef(String(next ?? "").trim() || field.varName)
+        : celExpr(mode, next)) || null);
+      this.#touch();
+    };
+
+    const wrap = el("div", "sf-field");
+    wrap.append(el("span", "sf-field-label", field.label));
+
+    const line = el("div", "sf-arg-line");
+    const select = el("select", "sf-arg-source");
+    for (const [mode, label] of [["", "common.unset"], ["vars", "field.source.vars"],
+      ["const", "field.source.const"], ["cel", "field.source.cel"]]) {
+      const option = el("option", "", t(label));
+      option.value = mode;
+      select.append(option);
+    }
+    select.value = source;
+    select.onchange = () => {
+      if (select.value === source) return;
+      if (!select.value) {
+        this.#valueMode.delete(key);
+        field.set(null);
+        this.#touch();
+        return;
+      }
+      // switching TO an expression keeps what is written: `vars.x` is where
+      // `vars.x > 0` is usually typed from. The other way there is nothing to
+      // keep — an expression is not a name and not a value
+      write(select.value, select.value === "cel" ? text : "");
+    };
+    line.append(select);
+
+    if (!source) {
+      // nothing to fill in yet — the picker is the whole control, as it is for
+      // a stage argument that has not been given a source
+    } else if (source === "vars") {
+      line.append(this.#varInput(value, (name) => write("vars", name)));
+    } else {
+      const input = el("input");
+      if (source === "cel") input.classList.add("sf-cel");
+      input.value = value;
+      input.placeholder = source === "cel"
+        ? field.placeholder ?? t("args.celPlaceholder")
+        : field.valuePlaceholder ?? t("field.valueOrJson");
+      this.#bindInput(input, () => write(source, input.value));
+      line.append(input);
+    }
+
+    wrap.append(line);
+    return wrap;
   }
 
   #tagsField(field) {

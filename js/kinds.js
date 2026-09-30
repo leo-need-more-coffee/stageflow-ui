@@ -110,6 +110,68 @@ export function formatLiteral(value) {
   return JSON.stringify(value);
 }
 
+/** An expression that is ONE variable and nothing else: `vars.x`, `vars['итог']`. */
+const WHOLE_VAR = /^\s*vars(?:\.([^\W\d]\w*)|\[\s*'([^']*)'\s*\]|\[\s*"([^"]*)"\s*\])\s*$/u;
+
+/** A variable by name, as CEL addresses it. The dotted form is allowed only for
+ * an identifier, so `итог` goes through the index form — the same two shapes
+ * `celRefs` reads back. */
+export function celVarRef(name) {
+  const clean = String(name ?? "").trim();
+  if (!clean) return "";
+  return /^[^\W\d]\w*$/u.test(clean) ? `vars.${clean}` : `vars['${clean}']`;
+}
+
+/**
+ * How an expression was written: a bare variable, a bare value, or an
+ * expression proper.
+ *
+ * The condition of a `condition`, the `when` of a case, the `items` of a loop —
+ * the core evaluates all of them with CEL and accepts nothing else, so unlike a
+ * stage argument these cannot keep the three sources as three shapes in the
+ * JSON. They are READ BACK out of the text instead, and the panel offers the
+ * same three ways of filling them in as a stage argument has. An empty field is
+ * a variable not yet named: that is what these fields hold most of the time.
+ */
+export function celSource(expr) {
+  const text = String(expr ?? "");
+  if (!text.trim()) return { source: "vars", value: "" };
+  const whole = text.match(WHOLE_VAR);
+  if (whole) return { source: "vars", value: whole[1] ?? whole[2] ?? whole[3] };
+  try {
+    const value = formatLiteral(JSON.parse(text));
+    // only if it survives the way back: otherwise the panel would quietly turn
+    // the string "42" into the number 42 the first time it is touched
+    if (celExpr("const", value) === text) return { source: "const", value };
+  } catch { /* not a value, then — an expression */ }
+  return { source: "cel", value: text };
+}
+
+/** The text of an expression written the given way — the inverse of
+ * `celSource`. A value is stored as JSON, which is valid CEL for everything a
+ * form can produce. */
+export function celExpr(source, value) {
+  if (source === "vars") return celVarRef(value);
+  if (source !== "const") return String(value ?? "");
+  const text = String(value ?? "");
+  return text.trim() === "" ? "" : JSON.stringify(parseLiteral(text));
+}
+
+/**
+ * The read ports of an expression field, written the way a stage argument
+ * writes its own: `items ← tickets` for a variable, `items ← ƒ(a,b)` for an
+ * expression. The name of the field is on the card because a port that says
+ * only the variable leaves "and what is it for?" to the panel — and a port is
+ * what a wire is attached to.
+ */
+function celFieldIns(field, expr) {
+  const refs = celRefs(expr);
+  if (!refs.length) return [];
+  return celSource(expr).source === "vars"
+    ? [{ label: `${field} ← ${refs[0].name}`, refs }]
+    : [{ label: `${field} ← ƒ(${refs.map((r) => r.name).join(",")})`, refs }];
+}
+
 // ------------------------------------------- arguments <-> form rows
 
 /** node.arguments (the vars/const buckets, .$ = CEL) -> flat rows
@@ -672,14 +734,19 @@ export const ConditionKind = register(class ConditionKind extends NodeKind {
   }
 
   static dataIns(node) {
-    const refs = celRefs(node.condition);
-    const ins = refs.map((ref) => ({ label: `? ${ref.name}`, refs: [ref] }));
-    return [...ins, ...super.dataIns(node)];
+    return [...celFieldIns("condition", node.condition), ...super.dataIns(node)];
+  }
+
+  static acceptVariable(node, variable) {
+    return [{
+      label: t("accept.conditionOn", { name: variable.name }),
+      apply: () => { node.condition = celVarRef(variable.name); },
+    }];
   }
 
   static fields(node) {
     return [
-      { kind: "cel", group: "main", label: t("field.condition"),
+      { kind: "value", group: "main", label: t("field.condition"), varName: "condition",
         get: () => node.condition, set: (v) => { node.condition = v ?? ""; },
         placeholder: "vars.count > 0" },
       exposeFieldDesc(node),
@@ -735,28 +802,43 @@ export const SwitchKind = register(class SwitchKind extends NodeKind {
   static dataIns(node) {
     const seen = new Set();
     const ins = [];
-    for (const c of node.cases ?? []) {
-      for (const ref of celRefs(c.when)) {
-        if (seen.has(ref.name)) continue;
-        seen.add(ref.name);
-        ins.push({ label: `? ${ref.name}`, refs: [ref] });
+    for (const branch of node.cases ?? []) {
+      for (const port of celFieldIns("when", branch.when)) {
+        if (seen.has(port.label)) continue;
+        seen.add(port.label);
+        ins.push(port);
       }
     }
     return [...ins, ...super.dataIns(node)];
   }
 
+  static acceptVariable(node, variable) {
+    return [{
+      label: t("accept.switchCase", { name: variable.name }),
+      apply: () => { (node.cases ??= []).push({ when: celVarRef(variable.name), next: null }); },
+    }];
+  }
+
   static fields(node) {
     return [
       { kind: "rows", group: "main", label: t("field.cases"),
+        // the `when` of a case is CEL in the JSON and the source column says
+        // how it was written — the same three ways a stage argument has
         columns: [
+          { key: "source", type: "select", width: "104px",
+            options: [["vars", t("field.source.vars")], ["const", t("field.source.const")],
+              ["cel", t("field.source.cel")]] },
           { key: "when", type: "text", placeholder: t("field.cases.when") },
           { key: "next", type: "node-ref", width: "110px" },
         ],
-        get: () => (node.cases ?? []).map((c) => ({ when: c.when ?? "", next: c.next ?? "" })),
+        get: () => (node.cases ?? []).map((c) => {
+          const { source, value } = celSource(c.when);
+          return { source, when: value, next: c.next ?? "" };
+        }),
         set: (rows) => { node.cases = rows.filter((r) => r.when?.trim() || r.next)
-          .map((r) => ({ when: r.when ?? "", next: r.next ?? "" })); },
+          .map((r) => ({ when: celExpr(r.source ?? "cel", r.when), next: r.next ?? "" })); },
         incomplete: (r) => !r.when?.trim() && !r.next,
-        blank: () => ({ when: "", next: "" }) },
+        blank: () => ({ source: "vars", when: "", next: "" }) },
       exposeFieldDesc(node),
     ];
   }
@@ -1195,8 +1277,7 @@ export const MapKind = register(class MapKind extends NodeKind {
 
   /** The list the loop walks. */
   static dataIns(node) {
-    const ins = celRefs(node.items).map((ref) => ({ label: `⟲ ${ref.name}`, refs: [ref] }));
-    return [...ins, ...super.dataIns(node)];
+    return [...celFieldIns("items", node.items), ...super.dataIns(node)];
   }
 
   /**
@@ -1224,15 +1305,15 @@ export const MapKind = register(class MapKind extends NodeKind {
   static acceptVariable(node, variable) {
     return [{
       label: t("accept.walkList"),
-      apply: () => { node.items = `vars.${variable.name}`; },
+      apply: () => { node.items = celVarRef(variable.name); },
     }];
   }
 
   static fields(node) {
     return [
-      { kind: "cel", group: "main", label: t("field.items"),
+      { kind: "value", group: "main", label: t("field.items"), varName: "items",
         get: () => node.items, set: (v) => { node.items = v ?? ""; },
-        placeholder: "vars.tickets" },
+        placeholder: "vars.tickets", valuePlaceholder: '["a", "b"]' },
       { kind: "text", group: "out", label: t("field.itemVar"),
         get: () => node.item_var ?? "", placeholder: "item",
         set: (v) => { v?.trim() ? node.item_var = v.trim() : delete node.item_var; } },
