@@ -11,7 +11,9 @@
  * changes on a reload, so the specs held in memory can simply be the reader's
  * already — and every consumer goes on reading `spec.description` as a string.
  */
+import { controlSuccessors } from "./dataflow.js";
 import { prose, t } from "./i18n.js";
+import { reachable } from "./regions.js";
 
 /**
  * A spec with its prose reduced to the reader's language.
@@ -108,6 +110,8 @@ export class Validator {
       push(null, t("issue.entryMismatch", { entry: graph.entry, node: entryNode.id }));
     }
 
+    this.#noWayOut(graph, push);
+
     const seen = new Set();
     for (const node of graph.nodes ?? []) {
       if (seen.has(node.id)) push(node.id, t("issue.duplicateId"));
@@ -118,10 +122,73 @@ export class Validator {
       if (this.#capabilities && !this.#capabilities.supports(node.type)) {
         push(node.id, this.#capabilities.reason(node.type));
       }
+      // a port pointing at its OWN node: `then` of a condition at the condition,
+      // `next` of a stage at the stage. Whatever the kind, that is a loop with
+      // no way out — nothing between two visits can change the decision, since
+      // the only node that runs in between is this one. A cycle through other
+      // nodes is the ordinary way to write a loop and is left alone. The panel
+      // does not offer the node itself any more, so this catches what arrives
+      // as JSON.
+      for (const port of kindOf(node).orderPorts(node)) {
+        if (port.get?.() === node.id) {
+          push(node.id, t("issue.selfLoop", { port: port.label }));
+        }
+      }
       const env = { stages: this.#stages, capabilities: this.#capabilities };
       for (const message of kindOf(node).validate(node, graph, pipeline, env)) {
         push(node.id, message);
       }
     }
+  }
+
+  /**
+   * Nodes a run can enter but never leave: no path out of them reaches a point
+   * where execution ends.
+   *
+   * A self-reference is the smallest case of this and is named separately; here
+   * it is the ordinary one — a loop somebody forgot to give a way out, two or
+   * ten nodes around. The ends of the walk are the nodes with nowhere left to
+   * go: a `terminal`, a port left unset, a body whose tail hands control back to
+   * the block. The implicit transitions count (`controlSuccessors`), or the last
+   * node of a `map` body would look trapped while it is the loop working
+   * exactly as written.
+   *
+   * Only what the entry can reach is reported: a detached pair of nodes pointing
+   * at each other is a graph half-assembled, not a mistake, and saying so on
+   * every keystroke is how a status bar learns to be ignored.
+   *
+   * It is not a proof of an infinite run — an exception thrown inside the ring
+   * still leaves it for a handler — which is why the message says what is
+   * certain: from here a run does not END.
+   */
+  #noWayOut(graph, push) {
+    const nodes = graph.nodes ?? [];
+    if (!nodes.length) return;
+    const succs = controlSuccessors(graph);
+    const canEnd = new Set(
+      nodes.filter((n) => !(succs.get(n.id)?.size)).map((n) => n.id),
+    );
+    for (let grew = true; grew;) {
+      grew = false;
+      for (const node of nodes) {
+        if (canEnd.has(node.id)) continue;
+        for (const target of succs.get(node.id) ?? []) {
+          if (!canEnd.has(target)) continue;
+          canEnd.add(node.id);
+          grew = true;
+          break;
+        }
+      }
+    }
+
+    const entry = graph.entry ?? nodes.find((n) => n.type === "entry")?.id;
+    if (!entry) return;
+    const live = reachable(graph, [entry]);
+    const trapped = nodes
+      .filter((n) => live.has(n.id) && !canEnd.has(n.id))
+      .map((n) => n.id);
+    if (!trapped.length) return;
+    const shown = trapped.slice(0, 8).join(", ") + (trapped.length > 8 ? ", …" : "");
+    push(trapped[0], t("issue.noWayOut", { nodes: shown }));
   }
 }
