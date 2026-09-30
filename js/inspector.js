@@ -24,7 +24,7 @@
  */
 import { varColor } from "./colors.js";
 import { variablesOf } from "./dataflow.js";
-import { t, tn } from "./i18n.js";
+import { has, t, tn } from "./i18n.js";
 import { paintIcon } from "./icons.js";
 import {
   argRows, celExpr, celSource, celVarRef, kindOf, outputRows, writeArgRows,
@@ -262,12 +262,10 @@ export class Inspector {
     box.append(el("p", "sf-muted", t("panel.legend")));
     const tips = el("ul", "sf-tips");
     // as many tips as the catalog holds: a translation may merge two of them
-    // or add one, and neither should mean editing this loop
-    for (let n = 1; ; n += 1) {
-      const key = `panel.tip.${n}`;
-      const text = t(key);
-      if (text === key) break;
-      tips.append(el("li", "", text));
+    // or add one, and neither should mean editing this loop. `has` rather than
+    // a miss of `t`, or the walk past the last one would warn in the console
+    for (let n = 1; has(`panel.tip.${n}`); n += 1) {
+      tips.append(el("li", "", t(`panel.tip.${n}`)));
     }
     box.append(tips);
     this.host.append(box);

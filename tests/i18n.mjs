@@ -98,6 +98,9 @@ const source = catalogs[FALLBACK];
   const optional = [
     ["js/toolbar.js", "delay.${key}.hint"],
     ["js/rundialog.js", "delay.${key}.hint"],
+    // a category the host invented, and the tip after the last one
+    ["js/palette.js", "category.${category}"],
+    ["js/inspector.js", "panel.tip.${n}"],
   ];
   for (const [file, key] of optional) {
     const src = readFileSync(dir(`../${file}`), "utf8");

@@ -16,7 +16,7 @@
  * rather than a node.
  */
 import { categoryColor } from "./colors.js";
-import { t } from "./i18n.js";
+import { has, t } from "./i18n.js";
 import { paintIcon } from "./icons.js";
 import { KINDS, StageKind } from "./kinds.js";
 
@@ -95,9 +95,12 @@ export class Palette {
       // a category is an id the backend chose. The catalog names the built-in
       // ones; a host's own category has no entry and shows as it was written,
       // which is the only honest answer for a word the editor has never seen
-      const key = `category.${category}`;
-      const name = t(key);
-      this.stagesEl.append(el("div", "sf-palette-cat", name === key ? category : name));
+      // asked with `has` first: a miss here is the normal case, and `t` warns
+      // about one — a hosted backend with categories of its own filled the
+      // console with complaints about strings nobody promised
+      const named = has(`category.${category}`);
+      this.stagesEl.append(el("div", "sf-palette-cat",
+        named ? t(`category.${category}`) : category));
       for (const spec of matched) {
         const item = el("button", "sf-palette-item sf-palette-stage");
         item.style.setProperty("--kind-color",
