@@ -16,8 +16,15 @@
   <script type="module">
     import { connectBackend } from "./js/connect.js";
     import { createEditor } from "./js/editor.js";
+    import { loadLocale } from "./js/i18n.js";
 
     const storageKey = "stageflow-editor";
+
+    // The language is settled before anything is drawn, and the connection
+    // screen is the first thing drawn: `?lang=ru` in a link, otherwise what was
+    // chosen here last time, otherwise what the browser asks for. Every other
+    // i18n call is synchronous, so no rendering code ever waits on a word.
+    await loadLocale();
 
     // The editor is static front-end: the stages and the run API live on a
     // StageFlow backend, and which one that is the user says on the connection

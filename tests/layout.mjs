@@ -11,6 +11,7 @@
  *
  * Run: node tests/layout.mjs
  */
+import "./_catalog.mjs";
 import { autoLayout } from "../js/model.js";
 import { computeRegions, regionBounds } from "../js/regions.js";
 import { nodeLayout } from "../js/geometry.js";

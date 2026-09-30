@@ -46,6 +46,60 @@ editor.togglePanel("palette");                       // "palette" | "inspector"
 editor.addEventListener("change", ...);
 ```
 
+## Languages
+
+`createEditor` draws its text in whatever language `i18n.js` has settled on, so
+an embedding decides the language before it builds the editor:
+
+```js
+import { loadLocale, install, setLocale, locale, locales } from "./js/i18n.js";
+
+await loadLocale();                  // fetch i18n/index.json + the catalogs
+await loadLocale(["ru"]);            // or ask for one, ignoring the reader
+locale();                            // the tag in force: "en", "ru", …
+locales();                           // {en: "English", ru: "Русский"} — what is on offer
+setLocale("ru");                     // remember the choice and reload the page
+```
+
+`loadLocale` fetches, which needs a server; a page that bundles its catalogs
+instead of serving them hands them over directly, and then nothing is fetched:
+
+```js
+import en from "./i18n/en.json" with { type: "json" };
+import ru from "./i18n/ru.json" with { type: "json" };
+
+install("ru", ru, en);   // the chosen catalog, and the fallback behind it
+```
+
+The third argument is why a half-finished translation is safe: a key missing
+from `ru` is drawn from `en` rather than as its own name. Passing only
+`install("ru", ru)` is the same thing without that safety net.
+
+Adding a language is adding `i18n/<tag>.json` and a line in `i18n/index.json`
+(`{"<tag>": "<the name, in that language>"}`). The keys are the English catalog's
+keys; anything left out falls back. Nothing in `js/` names a language except
+`FALLBACK`, so no code changes.
+
+### The stage specs are not in the catalogs
+
+They cannot be: they are the backend's prose, and the editor knows nothing about
+a host's stages. So a backend sends every language it has — each `description` is
+either a string or a `{locale: text}` mapping — and `StagesLibrary.setSpecs`
+resolves them once, on the way in, against the language in force. Everything
+downstream reads `spec.description` as a string.
+
+Which means specs passed straight in are localized too, with no work from the
+embedding:
+
+```js
+createEditor(container, { backend, stages: {...} });   // mappings are fine here
+editor.setStages(specs);                               // and here
+```
+
+Because the resolution happens at ingest and `setLocale` reloads the page, the
+specs held in memory are always the reader's language. An embedding that swaps
+the language without a reload has to hand the specs over again.
+
 ## The architecture of `js/`
 
 - `backend.js` — `Backend`: the address of the backend turned into the URLs of
@@ -81,6 +135,10 @@ editor.addEventListener("change", ...);
 - `storage.js` — the session in `localStorage`: the pipeline, the view and the
   panel layout, with a deferred write and without crashing on an unavailable
   storage;
+- `i18n.js` — the interface's text: the catalogs from `i18n/*.json`, the
+  negotiation of a language, `t` / `tn` / `pieces` / `has` to read a string, and
+  `prose` to pick a language out of the `{locale: text}` mapping a backend sent
+  (see [Languages](#languages));
 - `secrets.js` — the key store: the local values and the names of the secrets
   in the server environment, a mask instead of a value (see
   [Secrets](secrets.md));

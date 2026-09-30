@@ -11,6 +11,7 @@
  * pieces afterwards: redrawing it whole would tear out the field in which a
  * variable value is being typed at that very moment.
  */
+import { t } from "./i18n.js";
 import { formatLiteral, parseLiteral } from "./kinds.js";
 import { SECRET_MASK } from "./secrets.js";
 
@@ -22,11 +23,11 @@ function el(tag, className, text) {
 }
 
 const STATUS = {
-  running: { glyph: "▶", text: "running" },
-  paused: { glyph: "⏸", text: "stopped before a node" },
-  finished: { glyph: "✓", text: "finished" },
-  stopped: { glyph: "⏹", text: "stopped" },
-  failed: { glyph: "✕", text: "failed" },
+  running: { glyph: "▶", key: "status.running" },
+  paused: { glyph: "⏸", key: "debug.paused" },
+  finished: { glyph: "✓", key: "status.finished" },
+  stopped: { glyph: "⏹", key: "status.stopped" },
+  failed: { glyph: "✕", key: "status.failed" },
 };
 
 export class DebugPanel {
@@ -51,9 +52,9 @@ export class DebugPanel {
     this.varsEl = el("div", "sf-debug-vars");
     this.logEl = el("div", "sf-debug-log");
     const varsBox = el("div", "sf-debug-col");
-    varsBox.append(el("div", "sf-section-title", "Variables"), this.varsEl);
+    varsBox.append(el("div", "sf-section-title", t("debug.vars")), this.varsEl);
     const logBox = el("div", "sf-debug-col sf-debug-col-log");
-    logBox.append(el("div", "sf-section-title", "Events"), this.logEl);
+    logBox.append(el("div", "sf-section-title", t("debug.events")), this.logEl);
 
     // The model answer gets a column of its own: it is written chunk by chunk,
     // and the room for it must be permanent, or the panel would twitch on every
@@ -62,7 +63,7 @@ export class DebugPanel {
     this.streamBox = el("div", "sf-debug-col sf-debug-col-stream");
     // the heading is set by the stage (payload.label): the panel does not know
     // what text it was sent — it can show any stream
-    this.streamTitle = el("div", "sf-section-title", "Stream");
+    this.streamTitle = el("div", "sf-section-title", t("debug.stream"));
     this.streamBox.append(this.streamTitle, this.streamEl);
     this.streamBox.hidden = true;
 
@@ -102,7 +103,7 @@ export class DebugPanel {
       - this.streamEl.clientHeight < 24;
     if (this.streamEl.textContent !== text) this.streamEl.textContent = text;
     this.streamEl.classList.toggle("sf-streaming", Boolean(runner.streaming));
-    const label = runner.streamLabel || "Stream";
+    const label = runner.streamLabel || t("debug.stream");
     this.streamTitle.textContent = runner.streamNode
       ? `${label} · ${runner.streamNode}`
       : label;
@@ -114,15 +115,17 @@ export class DebugPanel {
   #renderHead() {
     const { runner } = this.env;
     this.headEl.textContent = "";
-    const status = STATUS[runner.status] ?? { glyph: "•", text: runner.status };
+    const status = STATUS[runner.status];
+    const glyph = status?.glyph ?? "•";
+    const text = status ? t(status.key) : runner.status;
 
     const chip = el("span", `sf-debug-status sf-debug-${runner.status}`);
-    chip.append(el("span", "sf-debug-glyph", status.glyph), el("span", "", status.text));
+    chip.append(el("span", "sf-debug-glyph", glyph), el("span", "", text));
     this.headEl.append(chip);
 
     if (runner.node) {
       const node = el("button", "sf-debug-node", runner.node);
-      node.title = "show the node";
+      node.title = t("debug.showNode");
       node.onclick = () => this.env.selection.set({ type: "node", id: runner.node });
       this.headEl.append(node);
     }
@@ -130,8 +133,9 @@ export class DebugPanel {
     for (const chip of this.#meterChips()) this.headEl.append(chip);
     if (runner.status === "finished" && runner.artifacts) {
       const names = Object.keys(runner.artifacts);
-      this.headEl.append(el("span", "sf-muted",
-        names.length ? `artifacts: ${names.join(", ")}` : "no artifacts"));
+      this.headEl.append(el("span", "sf-muted", names.length
+        ? t("debug.artifacts", { names: names.join(", ") })
+        : t("debug.noArtifacts")));
     }
 
     this.headEl.append(el("div", "sf-spacer"));
@@ -139,16 +143,17 @@ export class DebugPanel {
     if (runner.active) {
       this.headEl.append(
         runner.waiting
-          ? this.#button("▶", "Continue without stopping", () => runner.resume())
-          : this.#button("⏸", "Stop before the next node", () => runner.pause()),
-        this.#button("⏭", "Step: execute one node", () => runner.step()),
-        this.#button("⏹", "Stop the run", () => runner.stop(), "sf-btn sf-btn-small sf-danger"),
+          ? this.#button("▶", t("debug.resume"), () => runner.resume())
+          : this.#button("⏸", t("debug.pause"), () => runner.pause()),
+        this.#button("⏭", t("debug.step"), () => runner.step()),
+        this.#button("⏹", t("debug.stop"), () => runner.stop(),
+                     "sf-btn sf-btn-small sf-danger"),
         this.#delayField(),
       );
     } else {
-      this.headEl.append(this.#button("↻", "Run it once more", () => this.env.rerun?.()));
+      this.headEl.append(this.#button("↻", t("debug.rerun"), () => this.env.rerun?.()));
     }
-    this.headEl.append(this.#button("✕", "Close the debugger", () => runner.reset()));
+    this.headEl.append(this.#button("✕", t("debug.close"), () => runner.reset()));
   }
 
   /**
@@ -175,9 +180,9 @@ export class DebugPanel {
         const share = limit > 0 ? spent / limit : 1;
         if (share >= 1) chip.classList.add("sf-debug-meter-full");
         else if (share >= 0.8) chip.classList.add("sf-debug-meter-high");
-        chip.title = `${name}: ${shown} of ${limit} allowed`;
+        chip.title = t("debug.meterLimited", { name, spent: shown, limit });
       } else {
-        chip.title = `${name}: ${shown}, not limited here`;
+        chip.title = t("debug.meterFree", { name, spent: shown });
       }
       return chip;
     });
@@ -201,7 +206,7 @@ export class DebugPanel {
     input.min = "0";
     input.step = "100";
     input.value = String(Math.round(this.env.runner.delay * 1000));
-    input.title = "the pause between nodes; applied at once, without a restart";
+    input.title = t("debug.delayHint");
     input.onchange = () => {
       const seconds = (Number(input.value) || 0) / 1000;
       if (this.env.setDelay) this.env.setDelay(seconds);
@@ -225,7 +230,7 @@ export class DebugPanel {
     this.varsEl.textContent = "";
 
     const names = Object.keys(runner.vars).sort();
-    if (!names.length) this.varsEl.append(el("div", "sf-muted", "the frame is empty"));
+    if (!names.length) this.varsEl.append(el("div", "sf-muted", t("debug.emptyFrame")));
 
     for (const name of names) {
       const secret = this.env.secrets?.has(name) ?? false;
@@ -239,13 +244,13 @@ export class DebugPanel {
       input.value = secret ? SECRET_MASK : formatLiteral(runner.vars[name]);
       input.disabled = secret || !runner.active;
       input.title = secret
-        ? "a secret from the store: the value is hidden and cannot be edited"
-        : "the value is applied before the next node";
+        ? t("debug.varSecret")
+        : t("debug.varEditable");
       if (!secret) input.onchange = () => runner.setVar(name, parseLiteral(input.value));
       row.append(input);
       if (runner.active) {
         const drop = el("button", "sf-tag-x", "×");
-        drop.title = "drop the variable from the frame";
+        drop.title = t("debug.dropVar");
         drop.onclick = () => runner.dropVar(name);
         row.append(drop);
       }
@@ -258,11 +263,11 @@ export class DebugPanel {
   #addVarRow() {
     const row = el("div", "sf-debug-var sf-debug-var-new");
     const name = el("input", "sf-debug-var-name");
-    name.placeholder = "name";
+    name.placeholder = t("debug.varName");
     const value = el("input", "sf-debug-var-value");
-    value.placeholder = "value";
+    value.placeholder = t("field.result.value");
     const add = el("button", "sf-btn sf-btn-small", "+");
-    add.title = "add a variable to the frame";
+    add.title = t("debug.addVar");
     add.onclick = () => {
       if (!name.value.trim()) return;
       this.env.runner.setVar(name.value.trim(), parseLiteral(value.value));

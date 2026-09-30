@@ -27,6 +27,7 @@
  * focus — so the keyboard would die before it started.
  */
 import { paintIcon } from "./icons.js";
+import { t } from "./i18n.js";
 
 function el(tag, className, text) {
   const node = document.createElement(tag);
@@ -72,7 +73,7 @@ export class Menu {
     if (search) {
       this.search = el("input", "sf-menu-search");
       this.search.type = "search";
-      this.search.placeholder = "search…";
+      this.search.placeholder = t("common.search");
       this.search.oninput = () => this.#fill();
       this.root.append(this.search);
       this.root.classList.add("sf-menu-findable");

@@ -14,6 +14,7 @@
  *
  * Run: node tests/capabilities.mjs
  */
+import "./_catalog.mjs";
 import { BackendCapabilities } from "../js/capabilities.js";
 import { Validator } from "../js/stages.js";
 import { kindOf } from "../js/kinds.js";

@@ -10,6 +10,7 @@
  *
  * Run: node tests/ports.mjs
  */
+import "./_catalog.mjs";
 import { kindOf } from "../js/kinds.js";
 
 let failed = 0;

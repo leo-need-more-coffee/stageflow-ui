@@ -22,6 +22,7 @@
  */
 
 import { categoryColor } from "./colors.js";
+import { t, tn } from "./i18n.js";
 
 export const KINDS = new Map();
 
@@ -46,8 +47,10 @@ function exists(graph, id) {
   return (graph.nodes ?? []).some((n) => n.id === id);
 }
 
-function refIssue(graph, id, label) {
-  return id && !exists(graph, id) ? [`${label} '${id}' is not in the graph`] : [];
+/** @param what the port, named as the JSON names it (`next`, `body`) or, where
+ * there is no such name, already translated prose */
+function refIssue(graph, id, what) {
+  return id && !exists(graph, id) ? [t("issue.notInGraph", { what, id })] : [];
 }
 
 /** References to variables inside a CEL expression.
@@ -86,7 +89,7 @@ function cycleIssues(rows) {
     }
   }
   const stuck = [...deps.keys()].filter((n) => !done.has(n)).sort();
-  return stuck.length ? [`cyclic variable dependency: ${stuck.join(", ")}`] : [];
+  return stuck.length ? [t("issue.varCycle", { names: stuck.join(", ") })] : [];
 }
 
 /** A literal from a text input: number/bool/null/JSON, otherwise a string.
@@ -97,9 +100,9 @@ function cycleIssues(rows) {
  * silently and on every opening of the panel. It can also be typed as a JSON
  * string (`" "`), but a typed space must not disappear. */
 export function parseLiteral(text) {
-  const t = String(text ?? "").trim();
-  if (t === "") return text ?? "";
-  try { return JSON.parse(t); } catch { return text; }
+  const trimmed = String(text ?? "").trim();
+  if (trimmed === "") return text ?? "";
+  try { return JSON.parse(trimmed); } catch { return text; }
 }
 
 export function formatLiteral(value) {
@@ -209,11 +212,11 @@ function exposeDataPorts(node) {
 // --------------------------------------------- shared form descriptors
 
 const exposeFieldDesc = (node) => ({
-  kind: "rows", group: "more", label: "copy a variable under another name (expose)",
+  kind: "rows", group: "more", label: t("field.expose"),
   columns: [
-    { key: "srcName", type: "text", placeholder: "from variable" },
+    { key: "srcName", type: "text", placeholder: t("field.expose.from") },
     { key: "arrow", type: "label", text: "→", width: "20px" },
-    { key: "dstName", type: "text", placeholder: "to variable" },
+    { key: "dstName", type: "text", placeholder: t("field.expose.to") },
   ],
   get: () => Object.entries(node.expose ?? {}).map(([src, dst]) => ({
     srcName: src, dstName: dst,
@@ -232,9 +235,9 @@ const exposeFieldDesc = (node) => ({
 });
 
 const retryFieldDesc = (node) => ({
-  kind: "rows", group: "more", label: "retries on errors (retry)", collapsed: true,
+  kind: "rows", group: "more", label: t("field.retry"), collapsed: true,
   columns: [
-    { key: "errors", type: "text", placeholder: "errors: * or TimeoutError,..." },
+    { key: "errors", type: "text", placeholder: t("field.retry.errors") },
     { key: "attempts", type: "number", placeholder: "3", width: "58px", title: "max_attempts" },
     { key: "interval", type: "number", placeholder: "1.0", width: "58px", title: "interval_seconds" },
   ],
@@ -258,7 +261,9 @@ const retryFieldDesc = (node) => ({
 
 export class NodeKind {
   static type = "node";
-  static title = "Node";
+  // a getter, not a value: a static field is evaluated when the class is
+  // defined, which is before any catalog has been fetched
+  static get title() { return t("kind.node"); }
   static color = "#97a0ad";
   /** The glyph of the node type; for stage it is replaced by the stage icon. */
   static glyph = "◆";
@@ -289,12 +294,13 @@ export class NodeKind {
    */
   static badges(node) {
     const badges = [];
-    if (node.retry?.length) badges.push({ glyph: "↻", title: "retry: repeat on errors" });
+    if (node.retry?.length) badges.push({ glyph: "↻", title: t("badge.retry") });
     if (node.consume?.length) {
-      badges.push({ glyph: "✂", title: `consume: ${node.consume.join(", ")}` });
+      badges.push({ glyph: "✂",
+                    title: t("badge.consume", { names: node.consume.join(", ") }) });
     }
     if (node.expose && Object.keys(node.expose).length) {
-      badges.push({ glyph: "⇄", title: "expose: a copy of a variable under another name" });
+      badges.push({ glyph: "⇄", title: t("badge.expose") });
     }
     return badges;
   }
@@ -359,7 +365,7 @@ export class NodeKind {
     for (const [src, dst] of Object.entries(node.expose ?? {})) {
       for (const path of [src, dst]) {
         if (!/^[^\W\d]\w*$/u.test(path)) {
-          issues.push(`expose '${path}' must be a variable name`);
+          issues.push(t("issue.exposeName", { name: path }));
         }
       }
     }
@@ -371,19 +377,17 @@ export class NodeKind {
 
 export const EntryKind = register(class EntryKind extends NodeKind {
   static type = "entry";
-  static title = "Entry";
+  static get title() { return t("kind.entry"); }
   static color = "#3fbf9f";
   static glyph = "▶";
 
-  static description() {
-    return "The start of the pipeline: the variables it starts with";
-  }
+  static description() { return t("kind.entry.about"); }
 
   static defaults(id) { return { id, type: "entry", variables: {}, next: null }; }
 
   static subtitle(node) {
     const names = varRows(node).map((r) => r.name).filter(Boolean);
-    return names.length ? names.join(", ") : "— no variables —";
+    return names.length ? names.join(", ") : t("kind.entry.noVars");
   }
 
   static orderPorts(node) {
@@ -416,7 +420,7 @@ export const EntryKind = register(class EntryKind extends NodeKind {
 
   static acceptVariable(node, variable) {
     return [{
-      label: `default value for ${variable.name}`,
+      label: t("accept.entryDefault", { name: variable.name }),
       apply: () => {
         const rows = varRows(node).filter((r) => r.name !== variable.name);
         rows.push({ name: variable.name, source: "const", value: "" });
@@ -427,13 +431,12 @@ export const EntryKind = register(class EntryKind extends NodeKind {
 
   static fields(node) {
     return [
-      { kind: "rows", group: "out",
-        label: "variables at start — default values (variables)",
+      { kind: "rows", group: "out", label: t("field.entryVars"),
         columns: [
-          { key: "name", type: "text", placeholder: "variable name", width: "112px" },
+          { key: "name", type: "text", placeholder: t("field.varName"), width: "112px" },
           { key: "source", type: "select", width: "104px",
-            options: [["const", "value"], ["cel", "expression"]] },
-          { key: "value", type: "text", placeholder: '5 / "text" / [1,2] / vars.n * 2' },
+            options: [["const", t("field.source.const")], ["cel", t("field.source.cel")]] },
+          { key: "value", type: "text", placeholder: t("field.entryVars.value") },
         ],
         get: () => varRows(node),
         set: (rows) => writeVarRows(node, rows),
@@ -448,11 +451,11 @@ export const EntryKind = register(class EntryKind extends NodeKind {
     const rows = varRows(node);
     const seen = new Set();
     for (const row of rows) {
-      if (!row.name) issues.push("a variable has no name");
-      else if (seen.has(row.name)) issues.push(`variable '${row.name}' is declared twice`);
+      if (!row.name) issues.push(t("issue.varNoName"));
+      else if (seen.has(row.name)) issues.push(t("issue.varTwice", { name: row.name }));
       seen.add(row.name);
       if (row.source === "cel" && !String(row.value ?? "").trim()) {
-        issues.push(`no expression for variable '${row.name}'`);
+        issues.push(t("issue.varNoExpr", { name: row.name }));
       }
     }
     issues.push(...cycleIssues(rows));
@@ -462,12 +465,12 @@ export const EntryKind = register(class EntryKind extends NodeKind {
     // otherwise "the start" means nothing
     const others = (graph.nodes ?? []).filter((n) => n !== node && n.type === "entry");
     if (others.length) {
-      issues.push(`more than one entry node: also ${others.map((n) => n.id).join(", ")}`);
+      issues.push(t("issue.manyEntries", { nodes: others.map((n) => n.id).join(", ") }));
     }
     for (const other of graph.nodes ?? []) {
       if (other === node) continue;
       if (kindOf(other).orderPorts(other).some((p) => p.get?.() === node.id)) {
-        issues.push(`a transition into the entry point is not allowed: '${other.id}' refers to it`);
+        issues.push(t("issue.intoEntry", { node: other.id }));
       }
     }
     issues.push(...refIssue(graph, node.next, "next"));
@@ -479,13 +482,13 @@ export const EntryKind = register(class EntryKind extends NodeKind {
 
 export const StageKind = register(class StageKind extends NodeKind {
   static type = "stage";
-  static title = "Stage";
+  static get title() { return t("kind.stage"); }
   static color = "#4fb8e8";
   static glyph = "▢";
 
   static defaults(id) { return { id, type: "stage", stage: "", next: null }; }
 
-  static subtitle(node) { return node.stage || "— no stage selected —"; }
+  static subtitle(node) { return node.stage || t("kind.stage.none"); }
 
   /** The icon from the stage docstring; without one — a monogram of the name
    * (`IncrementStage` -> `IS`), so that stages still tell each other apart. */
@@ -570,7 +573,7 @@ export const StageKind = register(class StageKind extends NodeKind {
     const LIMIT = 6;
     if (rows.length <= LIMIT) return rows;
     return [...rows.slice(0, LIMIT - 1),
-      { name: "…", text: `${rows.length - (LIMIT - 1)} more` }];
+      { name: "…", text: tn("card.moreValues", rows.length - (LIMIT - 1)) }];
   }
 
   static acceptVariable(node, variable, env) {
@@ -581,22 +584,25 @@ export const StageKind = register(class StageKind extends NodeKind {
       rows.push({ name: argName, source: "vars", value: variable.name });
       writeArgRows(node, rows);
     };
-    const options = known.map((name) => ({ label: `argument ${name}`, apply: bind(name) }));
-    options.push({ label: "argument (own name)…", prompt: "Argument name:", applyNamed: (n) => bind(n)() });
+    const options = known.map((name) => ({
+      label: t("accept.argument", { name }), apply: bind(name),
+    }));
+    options.push({ label: t("accept.argumentOwn"), prompt: t("accept.argumentPrompt"),
+                   applyNamed: (n) => bind(n)() });
     return options;
   }
 
   static fields(node, env) {
     const spec = env.stages.get(node.stage);
     return [
-      { kind: "select", group: "main", label: "stage",
+      { kind: "select", group: "main", label: t("field.stage"),
         get: () => node.stage, set: (v) => { node.stage = v; },
         options: ["", ...env.stages.names()] },
       // inputs and outputs are built from the stage spec: the user does not
       // invent table rows but fills in what the stage declared about itself
-      { kind: "spec-args", group: "in", label: "arguments", node, spec },
-      { kind: "spec-outputs", group: "out", label: "outputs", node, spec },
-      { kind: "tags", group: "more", label: "drop from the frame after the step (consume)",
+      { kind: "spec-args", group: "in", label: t("field.arguments"), node, spec },
+      { kind: "spec-outputs", group: "out", label: t("field.outputs"), node, spec },
+      { kind: "tags", group: "more", label: t("field.consume"),
         get: () => node.consume ?? [],
         set: (v) => { v.length ? node.consume = v : delete node.consume; } },
       exposeFieldDesc(node),
@@ -607,9 +613,9 @@ export const StageKind = register(class StageKind extends NodeKind {
 
   static validate(node, graph, pipeline, env) {
     const issues = super.validate(node, graph, pipeline, env);
-    if (!node.stage) issues.push("no stage selected");
+    if (!node.stage) issues.push(t("issue.noStage"));
     else if (env.stages.loaded && !env.stages.get(node.stage)) {
-      issues.push(`stage '${node.stage}' is not in the registry`);
+      issues.push(t("issue.unknownStage", { stage: node.stage }));
     }
     // a required argument from the spec that nobody filled in: in the panel it
     // is highlighted red, here it goes to the status bar with the same text
@@ -617,7 +623,7 @@ export const StageKind = register(class StageKind extends NodeKind {
     const filled = new Set(argRows(node).map((r) => r.name));
     for (const arg of spec?.arguments ?? []) {
       if (arg.optional || arg.name === "*" || filled.has(arg.name)) continue;
-      issues.push(`required argument '${arg.name}' is not set`);
+      issues.push(t("issue.argRequired", { name: arg.name }));
     }
     // an outputs key is the name of a field in the stage result, and a field
     // the stage does not return is a guaranteed runtime failure
@@ -627,13 +633,13 @@ export const StageKind = register(class StageKind extends NodeKind {
     const declaredOuts = (spec?.outputs ?? []).map((o) => o.name);
     for (const row of outputRows(node)) {
       if (row.cel) {
-        if (!row.src) issues.push(`no expression for output '${row.dest}'`);
+        if (!row.src) issues.push(t("issue.outNoExpr", { name: row.dest }));
         continue;
       }
       if (!declaredOuts.length || declaredOuts.includes("*")) continue;
       if (declaredOuts.includes(row.src)) continue;
-      issues.push(`the stage does not return the field '${row.src}' `
-        + `(it has: ${declaredOuts.join(", ")})`);
+      issues.push(t("issue.noSuchOutput",
+                     { name: row.src, available: declaredOuts.join(", ") }));
     }
     issues.push(...refIssue(graph, node.next, "next"));
     return issues;
@@ -644,11 +650,11 @@ export const StageKind = register(class StageKind extends NodeKind {
 
 export const ConditionKind = register(class ConditionKind extends NodeKind {
   static type = "condition";
-  static title = "Condition";
+  static get title() { return t("kind.condition"); }
   static color = "#e8b85c";
   static glyph = "?";
 
-  static description() { return "Branching on a CEL condition: then / else"; }
+  static description() { return t("kind.condition.about"); }
 
   /** A `condition` inserted into an edge picks up the former target with its
    * "yes" branch: that is the main road, and `else` is the exception to it. */
@@ -656,7 +662,7 @@ export const ConditionKind = register(class ConditionKind extends NodeKind {
 
   static defaults(id) { return { id, type: "condition", condition: "", then: null }; }
 
-  static subtitle(node) { return node.condition || "— CEL condition —"; }
+  static subtitle(node) { return node.condition || t("kind.condition.empty"); }
 
   static orderPorts(node) {
     return [
@@ -673,7 +679,7 @@ export const ConditionKind = register(class ConditionKind extends NodeKind {
 
   static fields(node) {
     return [
-      { kind: "cel", group: "main", label: "condition (CEL)",
+      { kind: "cel", group: "main", label: t("field.condition"),
         get: () => node.condition, set: (v) => { node.condition = v ?? ""; },
         placeholder: "vars.count > 0" },
       exposeFieldDesc(node),
@@ -682,8 +688,8 @@ export const ConditionKind = register(class ConditionKind extends NodeKind {
 
   static validate(node, graph, pipeline, env) {
     const issues = super.validate(node, graph, pipeline, env);
-    if (!node.condition) issues.push("empty condition");
-    if (!node.then) issues.push("no then is set");
+    if (!node.condition) issues.push(t("issue.emptyCondition"));
+    if (!node.then) issues.push(t("issue.noThen"));
     issues.push(...refIssue(graph, node.then, "then"), ...refIssue(graph, node.else, "else"));
     return issues;
   }
@@ -693,15 +699,15 @@ export const ConditionKind = register(class ConditionKind extends NodeKind {
 
 export const SwitchKind = register(class SwitchKind extends NodeKind {
   static type = "switch";
-  static title = "Switch";
+  static get title() { return t("kind.switch"); }
   static color = "#b07ce0";
   static glyph = "⑂";
 
-  static description() { return "N-way branching: the first true case wins"; }
+  static description() { return t("kind.switch.about"); }
 
   static defaults(id) { return { id, type: "switch", cases: [] }; }
 
-  static subtitle(node) { return `${(node.cases ?? []).length} cases`; }
+  static subtitle(node) { return tn("kind.switch.cases", (node.cases ?? []).length); }
 
   /** While there are no branches yet, the next node is the first `case`, not
    * `default`. */
@@ -741,9 +747,9 @@ export const SwitchKind = register(class SwitchKind extends NodeKind {
 
   static fields(node) {
     return [
-      { kind: "rows", group: "main", label: "branches: the first true one wins (cases)",
+      { kind: "rows", group: "main", label: t("field.cases"),
         columns: [
-          { key: "when", type: "text", placeholder: "CEL: vars.x > 0" },
+          { key: "when", type: "text", placeholder: t("field.cases.when") },
           { key: "next", type: "node-ref", width: "110px" },
         ],
         get: () => (node.cases ?? []).map((c) => ({ when: c.when ?? "", next: c.next ?? "" })),
@@ -757,9 +763,9 @@ export const SwitchKind = register(class SwitchKind extends NodeKind {
 
   static validate(node, graph, pipeline, env) {
     const issues = super.validate(node, graph, pipeline, env);
-    if (!(node.cases ?? []).length) issues.push("at least one case is needed");
+    if (!(node.cases ?? []).length) issues.push(t("issue.noCase"));
     for (const c of node.cases ?? []) {
-      if (!c.when || !c.next) issues.push("every case must have 'when' and 'next'");
+      if (!c.when || !c.next) issues.push(t("issue.caseIncomplete"));
       else issues.push(...refIssue(graph, c.next, "case next"));
     }
     issues.push(...refIssue(graph, node.default, "default"));
@@ -771,20 +777,19 @@ export const SwitchKind = register(class SwitchKind extends NodeKind {
 
 export const ParallelKind = register(class ParallelKind extends NodeKind {
   static type = "parallel";
-  static title = "Parallel";
+  static get title() { return t("kind.parallel"); }
   static color = "#8e8ce8";
   static glyph = "⇉";
 
   static description(node) {
-    return node.cancel_on_error === false
-      ? "The branches run in parallel; one failing does not cancel the rest"
-      : "The branches run in parallel; one failing cancels the rest";
+    return t(node.cancel_on_error === false
+      ? "kind.parallel.about.keep" : "kind.parallel.about.cancel");
   }
 
   static defaults(id) { return { id, type: "parallel", branches: [], next: null }; }
 
   static subtitle(node) {
-    return (node.branches ?? []).map((b) => b.id).join(", ") || "— no branches —";
+    return (node.branches ?? []).map((b) => b.id).join(", ") || t("kind.parallel.none");
   }
 
   /** While there are no branches, the next node is a branch, not what comes
@@ -817,9 +822,9 @@ export const ParallelKind = register(class ParallelKind extends NodeKind {
 
   static fields(node) {
     return [
-      { kind: "rows", group: "main", label: "branches",
+      { kind: "rows", group: "main", label: t("field.branches"),
         columns: [
-          { key: "id", type: "text", placeholder: "branch id", width: "96px" },
+          { key: "id", type: "text", placeholder: t("field.branches.id"), width: "96px" },
           { key: "entry", type: "node-ref", width: "110px" },
         ],
         get: () => (node.branches ?? []).map((b) => ({ id: b.id ?? "", entry: b.entry ?? "" })),
@@ -827,7 +832,7 @@ export const ParallelKind = register(class ParallelKind extends NodeKind {
           .map((r) => ({ id: r.id.trim(), entry: r.entry })); },
         incomplete: (r) => !r.id?.trim() || !r.entry,
         blank: () => ({ id: "", entry: "" }) },
-      { kind: "check", group: "more", label: "cancel sibling branches on a failure (cancel_on_error)",
+      { kind: "check", group: "more", label: t("field.cancelBranches"),
         get: () => node.cancel_on_error !== false,
         set: (v) => { v ? delete node.cancel_on_error : node.cancel_on_error = false; } },
       exposeFieldDesc(node),
@@ -837,9 +842,9 @@ export const ParallelKind = register(class ParallelKind extends NodeKind {
 
   static validate(node, graph, pipeline, env) {
     const issues = super.validate(node, graph, pipeline, env);
-    if (!(node.branches ?? []).length) issues.push("at least one branch is needed");
+    if (!(node.branches ?? []).length) issues.push(t("issue.noBranch"));
     for (const b of node.branches ?? []) {
-      issues.push(...refIssue(graph, b.entry, `entry of branch '${b.id}'`));
+      issues.push(...refIssue(graph, b.entry, t("issue.branchEntry", { id: b.id })));
     }
     issues.push(...refIssue(graph, node.next, "next"));
     return issues;
@@ -850,18 +855,16 @@ export const ParallelKind = register(class ParallelKind extends NodeKind {
 
 export const SubpipelineKind = register(class SubpipelineKind extends NodeKind {
   static type = "subpipeline";
-  static title = "Subpipeline";
+  static get title() { return t("kind.subpipeline"); }
   static color = "#d66fa0";
   static glyph = "▣";
 
-  static description() {
-    return "A nested pipeline: its own context, exchange through inputs/artifacts";
-  }
+  static description() { return t("kind.subpipeline.about"); }
 
   static defaults(id) { return { id, type: "subpipeline", subpipeline_id: "", next: null }; }
 
   static subtitle(node) {
-    return node.subpipeline_id ? `→ ${node.subpipeline_id}` : "— none selected —";
+    return node.subpipeline_id ? `→ ${node.subpipeline_id}` : t("kind.subpipeline.none");
   }
 
   static orderPorts(node) {
@@ -890,22 +893,22 @@ export const SubpipelineKind = register(class SubpipelineKind extends NodeKind {
 
   static acceptVariable(node, variable) {
     return [{
-      label: "pass into inputs…",
-      prompt: "Variable name inside the subpipeline:",
+      label: t("accept.intoInputs"),
+      prompt: t("accept.intoInputs.prompt"),
       applyNamed: (child) => { (node.inputs ??= {})[child] = variable.name; },
     }];
   }
 
   static fields(node, env) {
     return [
-      { kind: "select", group: "main", label: "subpipeline (subpipeline_id)",
+      { kind: "select", group: "main", label: t("field.subpipeline"),
         get: () => node.subpipeline_id, set: (v) => { node.subpipeline_id = v; },
         options: ["", ...Object.keys(env.model.pipeline.subpipelines ?? {})] },
-      { kind: "rows", group: "in", label: "what to pass inside (inputs)",
+      { kind: "rows", group: "in", label: t("field.inputs"),
         columns: [
-          { key: "child", type: "text", placeholder: "name in the child", width: "110px" },
+          { key: "child", type: "text", placeholder: t("field.inputs.child"), width: "110px" },
           { key: "arrow", type: "label", text: "←", width: "20px" },
-          { key: "parent", type: "text", placeholder: "parent variable" },
+          { key: "parent", type: "text", placeholder: t("field.parentVar") },
         ],
         get: () => Object.entries(node.inputs ?? {}).map(([child, parent]) => ({ child, parent })),
         set: (rows) => {
@@ -915,11 +918,11 @@ export const SubpipelineKind = register(class SubpipelineKind extends NodeKind {
         },
         incomplete: (r) => !r.child?.trim() || !r.parent?.trim(),
         blank: () => ({ child: "", parent: "" }) },
-      { kind: "rows", group: "out", label: "what to take back out (artifact_outputs)",
+      { kind: "rows", group: "out", label: t("field.artifactOutputs"),
         columns: [
-          { key: "parent", type: "text", placeholder: "parent variable", width: "110px" },
+          { key: "parent", type: "text", placeholder: t("field.parentVar"), width: "110px" },
           { key: "arrow", type: "label", text: "←", width: "20px" },
-          { key: "child", type: "text", placeholder: "child artifact" },
+          { key: "child", type: "text", placeholder: t("field.childArtifact") },
         ],
         get: () => Object.entries(node.artifact_outputs ?? {})
           .map(([parent, child]) => ({ parent, child })),
@@ -930,7 +933,7 @@ export const SubpipelineKind = register(class SubpipelineKind extends NodeKind {
         },
         incomplete: (r) => !r.parent?.trim() || !r.child?.trim(),
         blank: () => ({ parent: "", child: "" }) },
-      { kind: "text", group: "out", label: "child result → variable (result_output)",
+      { kind: "text", group: "out", label: t("field.resultOutput"),
         get: () => node.result_output,
         set: (v) => { v ? node.result_output = v : delete node.result_output; } },
       exposeFieldDesc(node),
@@ -940,9 +943,9 @@ export const SubpipelineKind = register(class SubpipelineKind extends NodeKind {
 
   static validate(node, graph, pipeline, env) {
     const issues = super.validate(node, graph, pipeline, env);
-    if (!node.subpipeline_id) issues.push("no subpipeline selected");
+    if (!node.subpipeline_id) issues.push(t("issue.noSubpipeline"));
     else if (!(node.subpipeline_id in (pipeline.subpipelines ?? {}))) {
-      issues.push(`subpipeline '${node.subpipeline_id}' is not declared`);
+      issues.push(t("issue.unknownSubpipeline", { id: node.subpipeline_id }));
     }
     issues.push(...refIssue(graph, node.next, "next"));
     return issues;
@@ -953,16 +956,17 @@ export const SubpipelineKind = register(class SubpipelineKind extends NodeKind {
 
 export const TerminalKind = register(class TerminalKind extends NodeKind {
   static type = "terminal";
-  static title = "Terminal";
+  static get title() { return t("kind.terminal"); }
   static color = "#4ecb86";
   static glyph = "◉";
 
-  static description() { return "The end of execution: returns result and artifacts"; }
+  static description() { return t("kind.terminal.about"); }
 
   static defaults(id) { return { id, type: "terminal" }; }
 
   static subtitle(node) {
-    return (node.artifacts ?? []).length ? "artifacts ↓" : "end of execution";
+    return t((node.artifacts ?? []).length
+      ? "kind.terminal.withArtifacts" : "kind.terminal.plain");
   }
 
   static dataIns(node) {
@@ -975,7 +979,7 @@ export const TerminalKind = register(class TerminalKind extends NodeKind {
 
   static acceptVariable(node, variable) {
     return [{
-      label: `into artifacts: ${variable.name}`,
+      label: t("accept.intoArtifacts", { name: variable.name }),
       apply: () => {
         node.artifacts ??= [];
         if (!node.artifacts.includes(variable.name)) node.artifacts.push(variable.name);
@@ -985,10 +989,10 @@ export const TerminalKind = register(class TerminalKind extends NodeKind {
 
   static fields(node) {
     return [
-      { kind: "rows", group: "main", label: "session outcome (result)",
+      { kind: "rows", group: "main", label: t("field.result"),
         columns: [
-          { key: "key", type: "text", placeholder: "key", width: "110px" },
-          { key: "value", type: "text", placeholder: "value" },
+          { key: "key", type: "text", placeholder: t("field.result.key"), width: "110px" },
+          { key: "value", type: "text", placeholder: t("field.result.value") },
         ],
         get: () => Object.entries(node.result ?? {})
           .map(([key, value]) => ({ key, value: formatLiteral(value) })),
@@ -999,7 +1003,7 @@ export const TerminalKind = register(class TerminalKind extends NodeKind {
         },
         incomplete: (r) => !r.key?.trim(),
         blank: () => ({ key: "", value: "" }) },
-      { kind: "tags", group: "out", label: "variables into the outcome (artifacts)",
+      { kind: "tags", group: "out", label: t("field.artifacts"),
         get: () => node.artifacts ?? [],
         set: (v) => { v.length ? node.artifacts = v : delete node.artifacts; } },
       exposeFieldDesc(node),
@@ -1012,7 +1016,7 @@ export const TerminalKind = register(class TerminalKind extends NodeKind {
 
 export const TryKind = register(class TryKind extends NodeKind {
   static type = "try";
-  static title = "Try";
+  static get title() { return t("kind.try"); }
   static color = "#e8935c";
   static glyph = "⛑";
 
@@ -1022,12 +1026,10 @@ export const TryKind = register(class TryKind extends NodeKind {
 
   static subtitle(node) {
     const kinds = (node.except ?? []).map((h) => (h.error_equals ?? ["*"]).join(","));
-    return kinds.length ? `except ${kinds.join(" | ")}` : "— no handlers —";
+    return kinds.length ? `except ${kinds.join(" | ")}` : t("kind.try.none");
   }
 
-  static description() {
-    return "An error in any node of the body goes to a matching except";
-  }
+  static description() { return t("kind.try.about"); }
 
   /** A `try` inserted into an edge takes the former target INTO ITS BODY: a
    * block is put there to protect what came next, not to postpone it. */
@@ -1089,11 +1091,12 @@ export const TryKind = register(class TryKind extends NodeKind {
 
   static fields(node) {
     return [
-      { kind: "rows", group: "main", label: "error handlers (except)",
+      { kind: "rows", group: "main", label: t("field.handlers"),
         columns: [
-          { key: "errors", type: "text", placeholder: "* or ValueError,TimeoutError" },
+          { key: "errors", type: "text", placeholder: t("field.handlers.errors") },
           { key: "next", type: "node-ref", width: "104px" },
-          { key: "result_var", type: "text", placeholder: "error → variable", width: "96px" },
+          { key: "result_var", type: "text", placeholder: t("field.handlers.resultVar"),
+            width: "96px" },
         ],
         get: () => (node.except ?? []).map((h) => ({
           errors: (h.error_equals ?? ["*"]).join(","),
@@ -1116,11 +1119,11 @@ export const TryKind = register(class TryKind extends NodeKind {
 
   static validate(node, graph, pipeline, env) {
     const issues = super.validate(node, graph, pipeline, env);
-    if (!node.body) issues.push("no entry into the block body (body) is set");
+    if (!node.body) issues.push(t("issue.noTryBody"));
     else issues.push(...refIssue(graph, node.body, "body"));
-    if (!(node.except ?? []).length) issues.push("at least one except handler is needed");
+    if (!(node.except ?? []).length) issues.push(t("issue.noHandler"));
     for (const handler of node.except ?? []) {
-      if (!handler.next) issues.push("an except handler has no transition");
+      if (!handler.next) issues.push(t("issue.handlerNoNext"));
       else issues.push(...refIssue(graph, handler.next, "except.next"));
     }
     issues.push(...refIssue(graph, node.next, "next"));
@@ -1153,14 +1156,12 @@ function reachableFrom(graph, starts, stopAt = new Set()) {
 
 export const MapKind = register(class MapKind extends NodeKind {
   static type = "map";
-  static title = "Map";
+  static get title() { return t("kind.map"); }
   static color = "#9dc45f";
   static glyph = "⟲";
 
   static description(node) {
-    return node.mode === "parallel"
-      ? "The body runs once per element of the list, all elements at once"
-      : "The body runs once per element of the list, one after another";
+    return t(node.mode === "parallel" ? "kind.map.about.parallel" : "kind.map.about.serial");
   }
 
   static defaults(id) {
@@ -1168,7 +1169,7 @@ export const MapKind = register(class MapKind extends NodeKind {
   }
 
   static subtitle(node) {
-    const items = node.items || "— CEL list —";
+    const items = node.items || t("kind.map.noItems");
     return `${items} → ${node.item_var || "item"}`;
   }
 
@@ -1186,7 +1187,7 @@ export const MapKind = register(class MapKind extends NodeKind {
 
   static orderPorts(node) {
     return [
-      { key: "body", label: "body", human: "loop body",
+      { key: "body", label: "body", human: t("port.loopBody"),
         get: () => node.body, set: (v) => { node.body = v; } },
       { key: "next", label: "next", get: () => node.next, set: (v) => { node.next = v; } },
     ];
@@ -1222,27 +1223,27 @@ export const MapKind = register(class MapKind extends NodeKind {
 
   static acceptVariable(node, variable) {
     return [{
-      label: "walk this list",
+      label: t("accept.walkList"),
       apply: () => { node.items = `vars.${variable.name}`; },
     }];
   }
 
   static fields(node) {
     return [
-      { kind: "cel", group: "main", label: "list to walk (items, CEL)",
+      { kind: "cel", group: "main", label: t("field.items"),
         get: () => node.items, set: (v) => { node.items = v ?? ""; },
         placeholder: "vars.tickets" },
-      { kind: "text", group: "out", label: "element → variable (item_var)",
+      { kind: "text", group: "out", label: t("field.itemVar"),
         get: () => node.item_var ?? "", placeholder: "item",
         set: (v) => { v?.trim() ? node.item_var = v.trim() : delete node.item_var; } },
-      { kind: "text", group: "out", label: "index → variable (index_var)",
-        get: () => node.index_var ?? "", placeholder: "— not needed —",
+      { kind: "text", group: "out", label: t("field.indexVar"),
+        get: () => node.index_var ?? "", placeholder: t("field.indexVar.none"),
         set: (v) => { v?.trim() ? node.index_var = v.trim() : delete node.index_var; } },
-      { kind: "rows", group: "out", label: "what to take out of an iteration (collect)",
+      { kind: "rows", group: "out", label: t("field.collect"),
         columns: [
-          { key: "src", type: "text", placeholder: "variable in the body", width: "110px" },
+          { key: "src", type: "text", placeholder: t("field.collect.src"), width: "110px" },
           { key: "arrow", type: "label", text: "→", width: "20px" },
-          { key: "dst", type: "text", placeholder: "list outside" },
+          { key: "dst", type: "text", placeholder: t("field.collect.dst") },
         ],
         get: () => Object.entries(node.collect ?? {}).map(([src, dst]) => ({ src, dst })),
         set: (rows) => {
@@ -1252,12 +1253,11 @@ export const MapKind = register(class MapKind extends NodeKind {
         },
         incomplete: (r) => !r.src?.trim() || !r.dst?.trim(),
         blank: () => ({ src: "", dst: "" }) },
-      { kind: "select", group: "main", label: "how to walk (mode)",
+      { kind: "select", group: "main", label: t("field.mapMode"),
         get: () => node.mode ?? "sequential",
         set: (v) => { v === "parallel" ? node.mode = "parallel" : delete node.mode; },
         options: ["sequential", "parallel"] },
-      { kind: "check", group: "more",
-        label: "stop the remaining elements on a failure (cancel_on_error)",
+      { kind: "check", group: "more", label: t("field.cancelItems"),
         get: () => node.cancel_on_error !== false,
         set: (v) => { v ? delete node.cancel_on_error : node.cancel_on_error = false; } },
       exposeFieldDesc(node),
@@ -1267,22 +1267,24 @@ export const MapKind = register(class MapKind extends NodeKind {
 
   static validate(node, graph, pipeline, env) {
     const issues = super.validate(node, graph, pipeline, env);
-    if (!node.items) issues.push("empty items expression");
-    if (!node.body) issues.push("no entry into the loop body (body) is set");
+    if (!node.items) issues.push(t("issue.emptyItems"));
+    if (!node.body) issues.push(t("issue.noMapBody"));
     else issues.push(...refIssue(graph, node.body, "body"));
     issues.push(...refIssue(graph, node.next, "next"));
 
     const names = [[node.item_var ?? "item", "item_var"]];
     if (node.index_var) names.push([node.index_var, "index_var"]);
     for (const [name, field] of names) {
-      if (!/^[^\W\d]\w*$/u.test(name)) issues.push(`${field} '${name}' must be a variable name`);
+      if (!/^[^\W\d]\w*$/u.test(name)) {
+        issues.push(t("issue.fieldVarName", { field, name }));
+      }
     }
     if (node.index_var && node.index_var === (node.item_var ?? "item")) {
-      issues.push("item_var and index_var are the same name");
+      issues.push(t("issue.sameVarNames"));
     }
     for (const [src, dst] of Object.entries(node.collect ?? {})) {
       for (const name of [src, dst]) {
-        if (!/^[^\W\d]\w*$/u.test(name)) issues.push(`collect '${name}' must be a variable name`);
+        if (!/^[^\W\d]\w*$/u.test(name)) issues.push(t("issue.collectName", { name }));
       }
     }
     issues.push(...this.#escapeIssues(node, graph));
@@ -1304,7 +1306,7 @@ export const MapKind = register(class MapKind extends NodeKind {
       for (const port of kindOf(member).orderPorts(member)) {
         const target = port.get?.();
         if (!target || members.has(target) || !exists(graph, target)) continue;
-        issues.push(`'${id}' leads to '${target}', outside the loop body`);
+        issues.push(t("issue.escapesLoop", { node: id, target }));
       }
     }
     return issues;

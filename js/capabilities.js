@@ -17,6 +17,7 @@
  * is marked: a false "unsupported" on a perfectly good backend is worse than
  * the error we are avoiding. `known` says which of the two situations this is.
  */
+import { t } from "./i18n.js";
 
 export class BackendCapabilities extends EventTarget {
   /** null — nothing is known (no /api/meta); otherwise the Set of node types. */
@@ -96,21 +97,23 @@ export class BackendCapabilities extends EventTarget {
   reason(type) {
     if (this.supports(type)) return "";
     if (this.#plan) {
-      const shown = this.previewing ? " (the plan being previewed)" : "";
-      return `plan '${this.#plan}'${shown} does not include a '${type}' node`;
+      const shown = this.previewing ? ` ${t("caps.previewNote")}` : "";
+      return t("caps.planRefuses", { plan: this.#plan, shown, type });
     }
-    const which = this.#version ? `the backend (core ${this.#version})` : "the backend";
-    return `${which} does not offer a '${type}' node`;
+    return this.#version
+      ? t("caps.coreLacks", { version: this.#version, type })
+      : t("caps.backendLacks", { type });
   }
 
   /** One line about the backend for the status bar and the connection screen. */
   summary() {
     if (!this.#probed) return "";
-    if (!this.known) return "backend version unknown (it serves no /api/meta)";
-    const shown = this.previewing ? " (preview)" : "";
-    const plan = this.#plan ? `plan ${this.#plan}${shown}, ` : "";
-    return `${plan}core ${this.#version}, api v${this.#api}, `
-      + `${this.#nodeTypes.size} node types`;
+    if (!this.known) return t("caps.unknown");
+    const shown = this.previewing ? ` ${t("caps.previewShort")}` : "";
+    const plan = this.#plan ? t("caps.plan", { plan: this.#plan, shown }) : "";
+    return plan + t("caps.summary", {
+      version: this.#version, api: this.#api, types: this.#nodeTypes.size,
+    });
   }
 
   /**
@@ -131,8 +134,7 @@ export class BackendCapabilities extends EventTarget {
       if (least !== null && least > steps) {
         issues.push({
           node: null,
-          message: `the shortest way through this graph is ${least} nodes, `
-            + `and the backend allows ${steps} steps`,
+          message: t("caps.tooManySteps", { nodes: least, steps }),
         });
       }
     }
@@ -145,16 +147,14 @@ export class BackendCapabilities extends EventTarget {
         if (typeof attempts === "number" && wanted > attempts) {
           issues.push({
             node: node.id,
-            message: `retry asks for ${wanted} attempts, `
-              + `and the backend allows ${attempts}`,
+            message: t("caps.tooManyRetries", { asked: wanted, allowed: attempts }),
           });
         }
         const interval = retrier.interval_seconds ?? 1;
         if (typeof pause === "number" && interval > pause) {
           issues.push({
             node: node.id,
-            message: `retry waits ${interval}s between attempts, `
-              + `and the backend allows ${pause}s`,
+            message: t("caps.retryTooSlow", { asked: interval, allowed: pause }),
           });
         }
       }

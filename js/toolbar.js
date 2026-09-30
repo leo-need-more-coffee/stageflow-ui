@@ -3,6 +3,7 @@
  * running and debugging, and switching between the root and the subpipelines.
  */
 import { connectBackend } from "./connect.js";
+import { has, locale, locales, setLocale, t, tn } from "./i18n.js";
 import { Modal } from "./modal.js";
 import { openMenu } from "./menu.js";
 import { DELAY_PRESETS, delayLabel } from "./runner.js";
@@ -35,11 +36,14 @@ export class Toolbar {
     // finding the right one meant reading the whole bar. Now the meaning is
     // visible from the menu name, and the items themselves carry the hotkeys,
     // so the bar stops being the only way to reach them.
+    // keyed by section name, not by title: the title is what a reader sees and
+     // changes with the language, while `openMenuName` and the neighbour walk
+     // have to keep working across a redraw
     this.builders = new Map([
-      ["File", () => this.#fileItems()],
-      ["Edit", () => this.#editItems()],
-      ["View", () => this.#viewItems()],
-      ["Run", () => this.#runItems()],
+      ["file", () => this.#fileItems()],
+      ["edit", () => this.#editItems()],
+      ["view", () => this.#viewItems()],
+      ["run", () => this.#runItems()],
     ]);
     this.buttons = new Map();
     for (const title of this.builders.keys()) {
@@ -74,7 +78,7 @@ export class Toolbar {
   // ------------------------------------------------------------- menu bar
 
   #menuButton(title) {
-    const button = el("button", "sf-menubtn", title);
+    const button = el("button", "sf-menubtn", t(`bar.${title}`));
     // A click closes a section only if it was opened BY A CLICK: a menu opened
     // by hovering would otherwise slam shut on the very press that was meant to
     // pin it (first pointerenter opens it, then click closes it — and the
@@ -154,22 +158,24 @@ export class Toolbar {
   #fileItems() {
     const { model } = this.editor;
     return [
-      { label: "New", hint: "clear the graph", apply: () => {
-        if (!model.pipeline.nodes.length || confirm("Clear the pipeline?")) model.reset();
+      { label: t("file.new"), hint: t("file.new.hint"), apply: () => {
+        if (!model.pipeline.nodes.length || confirm(t("file.new.confirm"))) model.reset();
       } },
       { separator: true },
-      { label: "Import JSON…", apply: () => this.#importModal() },
-      { label: "Export JSON…", apply: () => this.#exportModal() },
+      { label: t("file.import"), apply: () => this.#importModal() },
+      { label: t("file.export"), apply: () => this.#exportModal() },
       { separator: true },
-      { label: "Pipeline settings…", hint: "types, variables, metadata",
+      { label: t("file.settings"), hint: t("file.settings.hint"),
         apply: () => this.#settingsModal() },
-      { label: "Stage registry…", hint: this.editor.stages.loaded
-          ? `loaded: ${this.editor.stages.names().length}` : "not loaded",
+      { label: t("file.registry"), hint: this.editor.stages.loaded
+          ? t("file.registry.loaded", { n: this.editor.stages.names().length })
+          : t("file.registry.empty"),
         apply: () => this.#stagesModal() },
-      { label: "Connection…", hint: this.#connectionHint(),
+      { label: t("file.connection"), hint: this.#connectionHint(),
         apply: () => this.openConnection() },
-      { label: "Secrets…", hint: this.editor.secrets.size
-          ? `keys: ${this.editor.secrets.size}` : "API keys outside the JSON",
+      { label: t("file.secrets"), hint: this.editor.secrets.size
+          ? t("file.secrets.count", { n: this.editor.secrets.size })
+          : t("file.secrets.hint"),
         apply: () => this.#secretsModal() },
     ];
   }
@@ -178,19 +184,19 @@ export class Toolbar {
     const { model, selection } = this.editor;
     const picked = selection.nodes.size;
     return [
-      { label: "Undo", shortcut: "Ctrl+Z", disabled: !model.canUndo,
+      { label: t("edit.undo"), shortcut: "Ctrl+Z", disabled: !model.canUndo,
         apply: () => this.editor.undo() },
-      { label: "Redo", shortcut: "Ctrl+Shift+Z", disabled: !model.canRedo,
+      { label: t("edit.redo"), shortcut: "Ctrl+Shift+Z", disabled: !model.canRedo,
         apply: () => this.editor.redo() },
       { separator: true },
-      { label: "Copy", shortcut: "Ctrl+C", disabled: !picked,
+      { label: t("edit.copy"), shortcut: "Ctrl+C", disabled: !picked,
         apply: () => this.editor.copySelection() },
-      { label: "Cut", shortcut: "Ctrl+X", disabled: !picked,
+      { label: t("edit.cut"), shortcut: "Ctrl+X", disabled: !picked,
         apply: () => this.editor.cutSelection() },
-      { label: "Paste", shortcut: "Ctrl+V", disabled: !this.editor.clipboard.length,
+      { label: t("edit.paste"), shortcut: "Ctrl+V", disabled: !this.editor.clipboard.length,
         apply: () => this.editor.paste() },
       { separator: true },
-      { label: picked > 1 ? `Delete selected (${picked})` : "Delete selection",
+      { label: picked > 1 ? tn("edit.deleteSelected", picked) : t("edit.delete"),
         shortcut: "Delete", disabled: !selection.current,
         apply: () => this.editor.deleteSelection() },
     ];
@@ -201,30 +207,30 @@ export class Toolbar {
    * it three times to reach the far mode. */
   #viewItems() {
     const editor = this.editor;
-    const dataModes = [
-      ["off", "hide", "a cleaner graph, but who writes to whom is invisible"],
-      ["focus", "for the card under the cursor", "one node at a time"],
-      ["all", "all at once", "every variable flow is visible"],
-    ];
+    const dataModes = ["off", "focus", "all"];
     return [
-      { label: "Fit the graph to the screen", shortcut: "Shift+F",
+      { label: t("view.fit"), shortcut: "Shift+F",
         apply: () => editor.canvas.fitView() },
-      { label: "Lay out again", shortcut: "Shift+L", hint: "levels and columns from the graph",
+      { label: t("view.relayout"), shortcut: "Shift+L", hint: t("view.relayout.hint"),
         apply: () => editor.model.relayout() },
       { separator: true },
-      { heading: "Data wires" },
-      ...dataModes.map(([mode, label, hint]) => ({
-        label, hint, checked: editor.dataMode === mode,
+      { heading: t("view.wires") },
+      ...dataModes.map((mode) => ({
+        label: t(`view.wires.${mode}`), hint: t(`view.wires.${mode}.hint`),
+        checked: editor.dataMode === mode,
         apply: () => editor.setDataMode(mode),
       })),
       { separator: true },
-      { label: "Stage descriptions on the cards", checked: editor.showDescriptions,
+      { label: t("view.descriptions"), checked: editor.showDescriptions,
         apply: () => editor.toggleDescriptions() },
       { separator: true },
-      { label: "Node palette on the left", checked: editor.panels.palette,
+      { label: t("view.palette"), checked: editor.panels.palette,
         apply: () => editor.togglePanel("palette") },
-      { label: "Node panel on the right", checked: editor.panels.inspector,
+      { label: t("view.inspector"), checked: editor.panels.inspector,
         apply: () => editor.togglePanel("inspector") },
+      { separator: true },
+      { heading: t("view.language") },
+      ...this.#languageItems(),
     ];
   }
 
@@ -236,30 +242,47 @@ export class Toolbar {
     const { runner } = editor;
     const active = runner.active;
     return [
-      { label: "Run", shortcut: "F5", disabled: active,
-        hint: `asks for the starting variables, pace: ${delayLabel(editor.runDelay)}`,
+      { label: t("run.start"), shortcut: "F5", disabled: active,
+        hint: t("run.start.hint", { pace: delayLabel(editor.runDelay) }),
         apply: () => editor.run({ mode: "run" }) },
-      { label: "Debug step by step", shortcut: "Shift+F5", disabled: active,
-        hint: "stops before the first node", apply: () => editor.run({ mode: "step" }) },
+      { label: t("run.debug"), shortcut: "Shift+F5", disabled: active,
+        hint: t("run.debug.hint"), apply: () => editor.run({ mode: "step" }) },
       { separator: true },
-      { label: "Step", shortcut: "F10", disabled: !active, apply: () => runner.step() },
-      { label: runner.waiting ? "Continue" : "Pause", disabled: !active,
+      { label: t("run.step"), shortcut: "F10", disabled: !active,
+        apply: () => runner.step() },
+      { label: runner.waiting ? t("run.continue") : t("run.pause"), disabled: !active,
         apply: () => (runner.waiting ? runner.resume() : runner.pause()) },
-      { label: "Stop", disabled: !active, apply: () => runner.stop() },
+      { label: t("run.stop"), disabled: !active, apply: () => runner.stop() },
       { separator: true },
-      { heading: "Delay between nodes" },
-      ...DELAY_PRESETS.map(([value, label, hint]) => ({
-        label, hint, checked: editor.runDelay === value,
+      { heading: t("run.delay") },
+      // not every pace has something to explain — "1 s" explains itself — so the
+      // hint is set only where the catalog has one, never as a bare key
+      ...DELAY_PRESETS.map(([value, key]) => ({
+        label: t(`delay.${key}`),
+        ...(has(`delay.${key}.hint`) ? { hint: t(`delay.${key}.hint`) } : {}),
+        checked: editor.runDelay === value,
         apply: () => editor.setRunDelay(value),
       })),
       // a pace typed into the run dialog is shown as an item of its own:
       // otherwise the menu would carry no tick at all and the current pace
       // would look like "none", though the run will go exactly at it
       ...(DELAY_PRESETS.some(([value]) => value === editor.runDelay) ? [] : [{
-        label: delayLabel(editor.runDelay), hint: "set in the run dialog",
+        label: delayLabel(editor.runDelay), hint: t("delay.custom.hint"),
         checked: true, apply: () => {},
       }]),
     ];
+  }
+
+  /** The languages with a catalog, as ticked items.
+   *
+   * Read from `i18n`, which read them off the disk: the editor names no
+   * language of its own, so adding one is adding a file. */
+  #languageItems() {
+    const all = locales();
+    return Object.entries(all).map(([tag, name]) => ({
+      label: name, checked: tag === locale(),
+      apply: () => { if (tag !== locale()) setLocale(tag); },
+    }));
   }
 
   /** The state of the run on the right of the bar: while a session is going,
@@ -268,15 +291,15 @@ export class Toolbar {
     const { runner } = this.editor;
     const wrap = el("div", "sf-runstate");
     if (runner.status === "idle") return wrap;
-    const labels = {
-      running: ["▶", "running"], paused: ["⏸", "paused"], finished: ["✓", "finished"],
-      stopped: ["⏹", "stopped"], failed: ["✕", "failed"],
+    const glyphs = {
+      running: "▶", paused: "⏸", finished: "✓", stopped: "⏹", failed: "✕",
     };
-    const [glyph, text] = labels[runner.status] ?? ["•", runner.status];
+    const glyph = glyphs[runner.status] ?? "•";
+    const text = glyphs[runner.status] ? t(`status.${runner.status}`) : runner.status;
     const chip = el("button", `sf-runstate-chip sf-debug-${runner.status}`);
     chip.append(el("span", "sf-debug-glyph", glyph), el("span", "", text));
     if (runner.node) chip.append(el("span", "sf-runstate-node", runner.node));
-    chip.title = "show the node of the run";
+    chip.title = t("status.showNode");
     chip.onclick = () => {
       if (runner.node) this.editor.selection.set({ type: "node", id: runner.node });
     };
@@ -297,11 +320,11 @@ export class Toolbar {
     const wrap = el("div", "sf-graphsel");
     const select = el("select");
 
-    const rootOpt = el("option", "", "root graph");
+    const rootOpt = el("option", "", t("graph.root"));
     rootOpt.value = "";
     select.append(rootOpt);
     for (const key of Object.keys(model.pipeline.subpipelines ?? {})) {
-      const opt = el("option", "", `sub: ${key}`);
+      const opt = el("option", "", t("graph.sub", { id: key }));
       opt.value = key;
       select.append(opt);
     }
@@ -312,14 +335,14 @@ export class Toolbar {
     };
     wrap.append(select);
 
-    wrap.append(this.#button("+ sub", () => {
-      const id = prompt("Id of the new subpipeline:");
-      if (id && !model.addSubpipeline(id.trim())) alert("Such an id already exists, or it is empty");
+    wrap.append(this.#button(t("graph.add"), () => {
+      const id = prompt(t("graph.add.prompt"));
+      if (id && !model.addSubpipeline(id.trim())) alert(t("graph.add.taken"));
     }, "sf-btn sf-btn-small"));
 
     if (model.graphKey !== null) {
       wrap.append(this.#button("✕", () => {
-        if (confirm(`Delete the subpipeline '${model.graphKey}'?`)) {
+        if (confirm(t("graph.remove.confirm", { id: model.graphKey }))) {
           this.editor.selection.clear();
           model.removeSubpipeline(model.graphKey);
         }
@@ -331,9 +354,9 @@ export class Toolbar {
   // -------------------------------------------------------------- modals
 
   #importModal() {
-    const modal = new Modal("Import a pipeline").open();
+    const modal = new Modal(t("import.title")).open();
     const area = el("textarea", "sf-modal-area");
-    area.placeholder = "Paste the pipeline JSON...";
+    area.placeholder = t("import.placeholder");
     area.spellcheck = false;
 
     const file = el("input");
@@ -343,12 +366,12 @@ export class Toolbar {
       if (file.files[0]) area.value = await file.files[0].text();
     };
 
-    const apply = this.#button("Load", () => {
+    const apply = this.#button(t("import.load"), () => {
       try {
         this.editor.setPipeline(JSON.parse(area.value));
         modal.close();
       } catch (err) {
-        alert(`Malformed JSON: ${err.message}`);
+        alert(t("common.badJson", { reason: err.message }));
       }
     }, "sf-btn sf-primary");
 
@@ -356,7 +379,7 @@ export class Toolbar {
   }
 
   #exportModal() {
-    const modal = new Modal("Export the pipeline").open();
+    const modal = new Modal(t("export.title")).open();
     const json = JSON.stringify(this.editor.getPipeline(), null, 2);
     const area = el("textarea", "sf-modal-area");
     area.value = json;
@@ -365,7 +388,7 @@ export class Toolbar {
 
     const row = el("div", "sf-modal-row");
     row.append(
-      this.#button("Download", () => {
+      this.#button(t("export.download"), () => {
         const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
         const link = el("a");
         link.href = url;
@@ -373,7 +396,7 @@ export class Toolbar {
         link.click();
         URL.revokeObjectURL(url);
       }, "sf-btn sf-primary"),
-      this.#button("Copy", () => navigator.clipboard?.writeText(json)),
+      this.#button(t("export.copy"), () => navigator.clipboard?.writeText(json)),
     );
     modal.body.append(area, row);
   }
@@ -381,16 +404,16 @@ export class Toolbar {
   /** The pipeline sections that have no visual representation on the canvas:
    * types / variables / metadata — edited as JSON. */
   #settingsModal() {
-    const modal = new Modal("Pipeline settings").open();
+    const modal = new Modal(t("settings.title")).open();
     const { model } = this.editor;
     const sections = [
-      ["types", "Named types", '{"User": {"id": "int", "name": "string"}}'],
-      ["variables", "Variable types", '{"user": "User"}'],
-      ["metadata", "Metadata", "{}"],
+      ["types", '{"User": {"id": "int", "name": "string"}}'],
+      ["variables", '{"user": "User"}'],
+      ["metadata", "{}"],
     ];
     const areas = new Map();
-    for (const [key, label, placeholder] of sections) {
-      modal.body.append(el("div", "sf-field-label", label));
+    for (const [key, placeholder] of sections) {
+      modal.body.append(el("div", "sf-field-label", t(`settings.${key}`)));
       const area = el("textarea", "sf-modal-area sf-modal-area-small");
       area.spellcheck = false;
       area.placeholder = placeholder;
@@ -399,7 +422,7 @@ export class Toolbar {
       areas.set(key, area);
       modal.body.append(area);
     }
-    modal.body.append(this.#button("Save", () => {
+    modal.body.append(this.#button(t("common.save"), () => {
       try {
         for (const [key, area] of areas) {
           const text = area.value.trim();
@@ -409,7 +432,7 @@ export class Toolbar {
         model.touch();
         modal.close();
       } catch (err) {
-        alert(`Malformed JSON: ${err.message}`);
+        alert(t("common.badJson", { reason: err.message }));
       }
     }, "sf-btn sf-primary"));
   }
@@ -425,21 +448,17 @@ export class Toolbar {
    * shoulder.
    */
   #secretsModal() {
-    const modal = new Modal("Secrets").open();
+    const modal = new Modal(t("secrets.title")).open();
     const { secrets } = this.editor;
 
-    modal.body.append(el("p", "sf-muted",
-      "Keys are kept apart from the pipeline: only the NAME stays in the JSON, "
-      + "in an export and on the cards, and the value is substituted at start. A node "
-      + "reads it like an ordinary variable — put the name into the \"vars\" bucket of a "
-      + "stage argument."));
+    modal.body.append(el("p", "sf-muted", t("secrets.lead")));
 
     const list = el("div", "sf-secrets");
     const renderList = () => {
       list.textContent = "";
       const names = secrets.names();
       if (!names.length) {
-        list.append(el("div", "sf-muted", "Nothing here yet."));
+        list.append(el("div", "sf-muted", t("secrets.none")));
         return;
       }
       for (const name of names) {
@@ -447,19 +466,18 @@ export class Toolbar {
         const row = el("div", "sf-secret");
         row.append(el("span", "sf-secret-name", name));
         row.append(el("span", "sf-secret-value", SECRET_MASK));
-        const source = el("span", "sf-secret-source", env ? "server environment" : "browser");
-        source.title = env
-          ? "the value lives in the server environment and never reaches the browser"
-          : "the value lies in the localStorage of this browser";
+        const source = el("span", "sf-secret-source",
+                          t(env ? "secrets.from.env" : "secrets.from.browser"));
+        source.title = t(env ? "secrets.from.env.hint" : "secrets.from.browser.hint");
         row.append(source);
         // a server-side secret does not belong to the editor: it cannot be
         // deleted from here, and rightly so — it was not the editor that
         // created it
         const drop = el("button", "sf-tag-x", "×");
-        drop.title = env ? "set by an environment variable of the server" : "delete the key";
+        drop.title = t(env ? "secrets.drop.env" : "secrets.drop");
         drop.disabled = env;
         drop.onclick = () => {
-          if (confirm(`Delete the secret "${name}"?`)) {
+          if (confirm(t("secrets.drop.confirm", { name }))) {
             secrets.remove(name);
             renderList();
           }
@@ -471,50 +489,46 @@ export class Toolbar {
     renderList();
     modal.body.append(list);
 
-    modal.body.append(el("div", "sf-field-label", "Add or replace"));
+    modal.body.append(el("div", "sf-field-label", t("secrets.add")));
     const form = el("div", "sf-secret-form");
     const name = el("input", "sf-secret-input-name");
     name.placeholder = "OPENAI_API_KEY";
     name.spellcheck = false;
     const value = el("input", "sf-secret-input-value");
     value.type = "password";
-    value.placeholder = "value";
+    value.placeholder = t("secrets.value");
     value.spellcheck = false;
     value.autocomplete = "off";
     // the eye is only for the value BEING TYPED: a typo has to be seen before
     // the key goes into the store, and afterwards there is nothing to show
-    const peek = el("button", "sf-btn sf-btn-small", "show");
+    const peek = el("button", "sf-btn sf-btn-small", t("common.show"));
     peek.type = "button";
-    peek.title = "show the typed value";
+    peek.title = t("secrets.peek");
     peek.onclick = () => {
       value.type = value.type === "password" ? "text" : "password";
-      peek.textContent = value.type === "password" ? "show" : "hide";
+      peek.textContent = t(value.type === "password" ? "common.show" : "common.hide");
     };
-    const save = this.#button("Save", () => {
+    const save = this.#button(t("common.save"), () => {
       const key = name.value.trim();
       if (!validSecretName(key)) {
-        alert("A secret name is like a variable name: letters, digits, underscore.");
+        alert(t("secrets.badName"));
         return;
       }
       if (!value.value) {
-        alert("An empty value is not saved: to remove a key, delete it from the list.");
+        alert(t("secrets.emptyValue"));
         return;
       }
       secrets.set(key, value.value);
       name.value = "";
       value.value = "";
       value.type = "password";
-      peek.textContent = "show";
+      peek.textContent = t("common.show");
       renderList();
     }, "sf-btn sf-primary");
     form.append(name, value, peek, save);
     modal.body.append(form);
 
-    modal.body.append(el("p", "sf-muted",
-      "This is not encryption: the browser store is readable by extensions and devtools. "
-      + "It protects against the key spreading through exports, screenshots and the debug "
-      + "log. For a real secret use the environment variables of the server "
-      + "(SF_SECRETS=NAME or SF_SECRET_NAME=value): the browser receives the name only."));
+    modal.body.append(el("p", "sf-muted", t("secrets.note")));
   }
 
   /**
@@ -552,7 +566,7 @@ export class Toolbar {
     if (capabilities.plan) {
       bits.push(capabilities.previewing ? `${capabilities.plan} (preview)` : capabilities.plan);
     }
-    if (backend.authenticated) bits.push("authorized");
+    if (backend.authenticated) bits.push(t("conn.authorized"));
     return bits.join(" · ");
   }
 
@@ -571,7 +585,7 @@ export class Toolbar {
    * so a reload would lose the work and answer nothing.
    */
   openConnection() {
-    const modal = new Modal("Connection").open();
+    const modal = new Modal(t("conn.title")).open();
     // every section reads from the backend and from what it answered, so a
     // change in one of them makes the others stale — the whole body is drawn
     // again rather than patched, and `notice` carries the one thing a redraw
@@ -599,26 +613,20 @@ export class Toolbar {
 
   #connAddress(modal) {
     const { backend } = this.editor;
-    const change = this.#button("Change…", () => { modal.close(); this.#changeBackend(); });
-    const section = this.#connSection(modal, "Backend", change);
+    const change = this.#button(t("conn.change"),
+                               () => { modal.close(); this.#changeBackend(); });
+    const section = this.#connSection(modal, t("conn.backend"), change);
     section.append(el("div", "sf-conn-url", backend.url));
-    section.append(el("p", "sf-muted",
-      "Changing the address reloads the page: it is the ground everything "
-      + "stands on — the stage registry, a running session, the names of the "
-      + "environment secrets."));
+    section.append(el("p", "sf-muted", t("conn.backend.note")));
     // the one failure of a published editor that the browser reports worst
     if (typeof location !== "undefined" && location.protocol === "https:") {
-      section.append(el("p", "sf-muted",
-        "This page is served over https, so it can only reach an https "
-        + "backend — or one on localhost, which browsers allow. A plain http "
-        + "address elsewhere is blocked before the request is made, and looks "
-        + "from here exactly like a backend that is switched off."));
+      section.append(el("p", "sf-muted", t("conn.backend.https")));
     }
   }
 
   #connAuth(modal, redraw, notice) {
     const { backend } = this.editor;
-    const section = this.#connSection(modal, "Authorization");
+    const section = this.#connSection(modal, t("conn.auth"));
     const row = el("div", "sf-conn-row");
     const header = el("input", "sf-conn-header");
     header.type = "text";
@@ -632,9 +640,9 @@ export class Toolbar {
     value.type = "password";
     value.spellcheck = false;
     value.autocomplete = "off";
-    value.placeholder = backend.authenticated ? "•••••• (unchanged)" : "Bearer …";
+    value.placeholder = backend.authenticated ? t("conn.auth.kept") : "Bearer …";
     value.value = backend.auth.value;
-    const apply = this.#button("Apply", () => submit(), "sf-btn sf-primary");
+    const apply = this.#button(t("conn.apply"), () => submit(), "sf-btn sf-primary");
     row.append(header, value, apply);
     section.append(row);
 
@@ -648,41 +656,31 @@ export class Toolbar {
 
     const submit = async () => {
       apply.disabled = true;
-      said("Checking…", "wait");
+      said(t("conn.checking"), "wait");
       try {
         const count = await this.editor.setCredential({
           header: header.value, value: value.value,
         });
         // the plan, the node types and the limits all just changed with it
         redraw({ kind: "ok", text: value.value.trim()
-          ? `Accepted: ${count} stages.`
-          : `Credential cleared: ${count} stages without one.` });
+          ? tn("conn.auth.accepted", count)
+          : tn("conn.auth.cleared", count) });
       } catch (err) {
-        said(`${err.message ?? err} — the previous credential is still in use.`, "bad");
+        said(t("conn.auth.rejected", { reason: err.message ?? err }), "bad");
         apply.disabled = false;
       }
     };
     value.onkeydown = (e) => { if (e.key === "Enter") submit(); };
     header.onkeydown = (e) => { if (e.key === "Enter") submit(); };
 
-    section.append(el("p", "sf-muted",
-      "Sent with every request the editor makes. The name is a field because "
-      + "backends disagree — Authorization, X-Api-Key, whatever a gateway "
-      + "reads — and the editor authenticates nothing itself: it carries what "
-      + "it is given. Empty means it sends none. Kept in this browser's "
-      + "localStorage; treat it like the secret store, not like encryption."));
+    section.append(el("p", "sf-muted", t("conn.auth.note")));
   }
 
   #connPlan(modal, redraw) {
     const { capabilities, backend } = this.editor;
     if (!capabilities.plans) return;
-    const section = this.#connSection(modal, "Plan");
-    section.append(el("p", "sf-muted",
-      "What the editor draws and validates against: the palette, the limits "
-      + "in the debug panel and the warnings in the status bar. A view, not an "
-      + "entitlement — what a run may do the backend decides from your "
-      + "credentials, and a graph prepared for a plan you are not on is "
-      + "refused when it starts, by name."));
+    const section = this.#connSection(modal, t("conn.plan"));
+    section.append(el("p", "sf-muted", t("conn.plan.note")));
 
     const list = el("div", "sf-plan-list");
     const own = capabilities.previewing ? null : capabilities.plan;
@@ -699,10 +697,10 @@ export class Toolbar {
     };
     // "mine" first: the way back from a preview must not be a name one has to
     // remember, and the backend will not say which of the names it is
-    pick(null, "mine",
-         own ? `what these credentials are on — ${own}` : "whatever the backend gives");
+    pick(null, t("conn.plan.mine"),
+         own ? t("conn.plan.mine.is", { plan: own }) : t("conn.plan.mine.unknown"));
     for (const plan of capabilities.plans) {
-      pick(plan, plan, plan === own ? "the same, asked for by name" : "preview");
+      pick(plan, plan, t(plan === own ? "conn.plan.same" : "conn.plan.preview"));
     }
     section.append(list);
   }
@@ -710,35 +708,33 @@ export class Toolbar {
   #connAnswer(modal) {
     const { capabilities } = this.editor;
     if (!capabilities.probed) return;
-    const section = this.#connSection(modal, "What it answered");
+    const section = this.#connSection(modal, t("conn.answer"));
     if (!capabilities.known) {
-      section.append(el("p", "sf-muted",
-        "This backend serves no /api/meta, so the editor cannot tell what it "
-        + "runs — and does not guess: nothing is marked unsupported."));
+      section.append(el("p", "sf-muted", t("conn.answer.none")));
       return;
     }
     section.append(el("div", "sf-conn-url", capabilities.summary()));
-    section.append(el("p", "sf-muted", `runs: ${capabilities.nodeTypes.join(", ")}`));
+    section.append(el("p", "sf-muted",
+      t("conn.answer.runs", { types: capabilities.nodeTypes.join(", ") })));
     const counters = Object.entries(capabilities.limits?.counters ?? {});
     const gauges = Object.entries(capabilities.limits?.gauges ?? {});
     if (counters.length || gauges.length) {
-      section.append(el("p", "sf-muted", "limits: " + [...counters, ...gauges]
-        .map(([name, value]) => `${name} ${value}`).join(", ")));
+      section.append(el("p", "sf-muted", t("conn.answer.limits", {
+        limits: [...counters, ...gauges].map(([name, value]) => `${name} ${value}`).join(", "),
+      })));
     }
   }
 
   #stagesModal() {
-    const modal = new Modal("Stage registry").open();
+    const modal = new Modal(t("registry.title")).open();
     const { stages } = this.editor;
     modal.body.append(el("p", "sf-muted", stages.loaded
-      ? `Stages loaded: ${stages.names().length} (${stages.source})`
-      : "No stage specs loaded yet."));
+      ? tn("registry.loaded", stages.names().length, { source: stages.source })
+      : t("registry.empty")));
     modal.body.append(el("p", "sf-muted",
-      `The registry comes from the backend at ${this.editor.backend.url}. `
-      + "Reload it after the backend has registered new stages; a file is for "
-      + "working on a graph while that backend is down."));
+      t("registry.note", { url: this.editor.backend.url })));
 
-    const loadBtn = this.#button("Reload from the backend", async () => {
+    const loadBtn = this.#button(t("registry.reload"), async () => {
       await this.editor.reloadStages();
       modal.close();
     }, "sf-btn sf-primary");
@@ -752,10 +748,10 @@ export class Toolbar {
         stages.setSpecs(JSON.parse(await file.files[0].text()), file.files[0].name);
         modal.close();
       } catch (err) {
-        alert(`Malformed JSON: ${err.message}`);
+        alert(t("common.badJson", { reason: err.message }));
       }
     };
 
-    modal.body.append(loadBtn, el("div", "sf-field-label", "…or from a file"), file);
+    modal.body.append(loadBtn, el("div", "sf-field-label", t("registry.fromFile")), file);
   }
 }

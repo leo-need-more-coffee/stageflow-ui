@@ -20,6 +20,7 @@
  * is wrong is wrong here, on the screen where it can be corrected, rather than
  * at the first run.
  */
+import { pieces, t, tn } from "./i18n.js";
 import { VERSION } from "./version.js";
 import {
   Backend, DEFAULT_AUTH_HEADER, backendStorageKey, normalizeBackendUrl,
@@ -94,9 +95,7 @@ export function connectBackend({
     const title = el("h1", "sf-connect-title", "StageFlow Editor");
     title.append(el("span", "sf-connect-version", `v${VERSION}`));
     box.append(title);
-    box.append(el("p", "sf-connect-lead",
-      "The editor draws and debugs pipelines, but the stages and the execution "
-      + "live on a StageFlow backend. Give it the address of one."));
+    box.append(el("p", "sf-connect-lead", t("connect.lead")));
 
     const input = el("input", "sf-connect-input");
     input.type = "text";
@@ -106,7 +105,7 @@ export function connectBackend({
     input.autocomplete = "url";
     input.value = first || "";
 
-    const button = el("button", "sf-btn sf-primary sf-connect-btn", "Connect");
+    const button = el("button", "sf-btn sf-primary sf-connect-btn", t("connect.go"));
     button.type = "submit";
     form.append(input, button);
     box.append(form);
@@ -118,9 +117,9 @@ export function connectBackend({
     // triangle.
     const auth = el("details", "sf-connect-auth");
     auth.open = Boolean(remembered.auth.value);
-    const summary = el("summary", "", "Authorization");
+    const summary = el("summary", "", t("conn.auth"));
     summary.append(el("span", "sf-connect-auth-hint",
-      remembered.auth.value ? " — a header is set" : " — optional"));
+      t(remembered.auth.value ? "connect.auth.set" : "connect.auth.optional")));
     auth.append(summary);
 
     const authRow = el("div", "sf-connect-auth-row");
@@ -142,11 +141,7 @@ export function connectBackend({
     valueInput.value = remembered.auth.value;
     authRow.append(headerInput, valueInput);
     auth.append(authRow);
-    auth.append(el("p", "sf-connect-auth-note",
-      "Sent with every request, this one included. The name is a field because "
-      + "backends disagree: Authorization, X-Api-Key, whatever a gateway reads. "
-      + "Kept in this browser's localStorage — treat it like the secret store, "
-      + "not like encryption."));
+    auth.append(el("p", "sf-connect-auth-note", t("connect.auth.note")));
     box.append(auth);
 
     const status = el("div", "sf-connect-status");
@@ -154,20 +149,22 @@ export function connectBackend({
     box.append(status);
 
     const note = el("div", "sf-connect-note");
-    note.append(
-      el("span", "", "No backend at hand? "),
-      el("code", "", "python main.py"),
-      el("span", "", " from "),
-      Object.assign(el("a", "", "stageflow-example"), {
+    // one sentence with a command and a link inside it: `pieces` keeps it one
+    // entry, so a translation can put them where its own grammar wants them
+    const inside = {
+      command: () => el("code", "", "python main.py"),
+      repo: () => Object.assign(el("a", "", "stageflow-example"), {
         href: "https://github.com/leo-need-more-coffee/stageflow-example",
         target: "_blank", rel: "noreferrer noopener",
       }),
-      el("span", "", ` serves one at ${EXAMPLE_URL}.`),
-    );
+    };
+    for (const piece of pieces("connect.none", ["command", "repo"], { url: EXAMPLE_URL })) {
+      note.append(typeof piece === "string" ? el("span", "", piece) : inside[piece.slot]());
+    }
     box.append(note);
 
     if (onCancel) {
-      const cancel = el("button", "sf-btn sf-connect-cancel", "Cancel");
+      const cancel = el("button", "sf-btn sf-connect-cancel", t("common.cancel"));
       cancel.type = "button";
       cancel.onclick = () => { overlay.remove(); onCancel(); resolve(null); };
       box.append(cancel);
@@ -187,7 +184,7 @@ export function connectBackend({
       if (busy) return;
       const address = normalizeBackendUrl(raw);
       if (!address) {
-        say("That does not look like an address. Try http://host:port.", "bad");
+        say(t("connect.badAddress"), "bad");
         input.focus();
         return;
       }
@@ -196,13 +193,13 @@ export function connectBackend({
       busy = true;
       button.disabled = true;
       input.disabled = true;
-      say(`Connecting to ${address}…`, "wait");
+      say(t("connect.connecting", { address }), "wait");
       try {
         const backend = new Backend(address, { auth: credential, plan: shownPlan });
         const { count } = await backend.probe();
         rememberBackend(storageKey, { url: backend.url, auth: backend.auth,
                                       plan: backend.plan });
-        say(`Connected: ${count} stages.`, "ok");
+        say(tn("connect.connected", count), "ok");
         overlay.remove();
         resolve(backend);
         return;
@@ -210,8 +207,8 @@ export function connectBackend({
         // a remembered address that stopped answering is not an error of the
         // user's making, so the first, silent attempt says it plainly
         say(silent
-          ? `${address} — ${err.message}. Check the address or start the backend.`
-          : `${address} — ${err.message}`, "bad");
+          ? t("connect.silentFail", { address, reason: err.message })
+          : t("connect.fail", { address, reason: err.message }), "bad");
         // a refusal is the one failure with a cure on this screen: unfold the
         // field rather than leave the answer behind a triangle
         if (/credential|HTTP 40[13]/i.test(err.message)) {

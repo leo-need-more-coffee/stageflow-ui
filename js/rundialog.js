@@ -14,6 +14,7 @@
  * the user overrode are visible — and a computed variable (`total.$`) cannot be
  * wiped by accident.
  */
+import { has, t, tn } from "./i18n.js";
 import { formatLiteral, parseLiteral, varRows } from "./kinds.js";
 import { Modal } from "./modal.js";
 import { DELAY_PRESETS, parseDelay } from "./runner.js";
@@ -43,7 +44,7 @@ export function askRunVars({
 
   return new Promise((resolve) => {
     let settled = false;
-    const modal = new Modal(mode === "step" ? "Debug the pipeline" : "Run the pipeline");
+    const modal = new Modal(t(mode === "step" ? "rundlg.debug" : "rundlg.run"));
     const finish = (value) => {
       if (settled) return;
       settled = true;
@@ -54,11 +55,9 @@ export function askRunVars({
     modal.overlay.addEventListener("pointerdown", (e) => {
       if (e.target === modal.overlay) finish(null);
     });
-    modal.body.append(el("p", "sf-muted",
-      entry
-        ? `The starting variables are declared by the node "${entry.id}". An empty field `
-          + "means the value from the pipeline; a filled one overrides it for this run."
-        : "There is no entry node in the graph: the starting variables can be set here."));
+    modal.body.append(el("p", "sf-muted", entry
+      ? t("rundlg.lead", { node: entry.id })
+      : t("rundlg.leadNoEntry")));
 
     // The names of the keys to be substituted are not decoration. A key only
     // travels to a run if the graph refers to that name, and a mismatch ("the
@@ -67,13 +66,10 @@ export function askRunVars({
     // still not shown: a name is not a secret, the value is.
     if (secretNames.length) {
       modal.body.append(el("p", "sf-muted",
-        `The store will substitute: ${secretNames.join(", ")} — values are not shown.`));
+        t("rundlg.secrets", { names: secretNames.join(", ") })));
     } else if (secretsStored) {
-      const warn = el("p", "sf-run-warn",
-        `The store holds ${secretsStored} key(s), but the graph refers to none of them. `
-        + "A node reads a key like a variable: the name in the \"vars\" argument of a stage "
-        + "must match the name in File -> Secrets...");
-      modal.body.append(warn);
+      modal.body.append(el("p", "sf-run-warn",
+        tn("rundlg.secretsUnused", secretsStored)));
     }
 
     const rows = el("div", "sf-run-vars");
@@ -87,11 +83,10 @@ export function askRunVars({
       input.placeholder = row.source === "cel"
         ? `ƒ ${row.value ?? ""}`.slice(0, 48)
         : formatLiteral(parseLiteral(String(row.value ?? "")));
-      input.title = row.source === "cel"
-        ? "computed by an expression; fill it in to substitute a ready value"
-        : "the default value from the entry node";
+      input.title = t(row.source === "cel" ? "rundlg.celHint" : "rundlg.constHint");
       line.append(input);
-      line.append(el("span", "sf-run-var-kind", row.source === "cel" ? "expression" : "value"));
+      line.append(el("span", "sf-run-var-kind",
+                     t(row.source === "cel" ? "field.source.cel" : "field.source.const")));
       inputs.set(row.name, input);
       rows.append(line);
     }
@@ -99,9 +94,9 @@ export function askRunVars({
     // own variables: a graph can read what entry never declared
     const extra = el("div", "sf-run-var sf-run-var-extra");
     const extraName = el("input");
-    extraName.placeholder = "own variable";
+    extraName.placeholder = t("rundlg.ownVar");
     const extraValue = el("input");
-    extraValue.placeholder = "value";
+    extraValue.placeholder = t("field.result.value");
     extra.append(extraName, extraValue);
     rows.append(extra);
     modal.body.append(rows);
@@ -116,27 +111,29 @@ export function askRunVars({
     // seconds a node, otherwise I cannot keep up"), and running into someone
     // else's list where a number simply has to be typed is a needless obstacle.
     const pace = el("div", "sf-run-var sf-run-var-pace");
-    pace.append(el("span", "sf-run-var-name", "pace"));
+    pace.append(el("span", "sf-run-var-name", t("rundlg.pace")));
     const delayInput = el("input");
     delayInput.type = "text";
     delayInput.inputMode = "decimal";
     delayInput.value = delay ? String(delay) : "";
-    delayInput.placeholder = "0 — no delay";
-    delayInput.title = "the pause between nodes in seconds: with it you can see execution "
-      + "walk through the graph. A fraction can be typed with a dot or a comma.";
+    delayInput.placeholder = t("rundlg.pacePlaceholder");
+    delayInput.title = t("rundlg.paceHint");
     // the ready-made values as the dropdown of the field itself: both pickable
     // and typeable
     const presets = el("datalist");
     presets.id = "sf-run-delays";
-    for (const [value, label, hint] of DELAY_PRESETS) {
+    for (const [value, key] of DELAY_PRESETS) {
       const option = el("option");
       option.value = String(value);
-      option.label = hint ? `${label} — ${hint}` : label;
+      const label = t(`delay.${key}`);
+      option.label = has(`delay.${key}.hint`)
+        ? `${label} — ${t(`delay.${key}.hint`)}`
+        : label;
       presets.append(option);
     }
     delayInput.setAttribute("list", presets.id);
     pace.append(delayInput, presets);
-    pace.append(el("span", "sf-run-var-kind", "seconds between nodes"));
+    pace.append(el("span", "sf-run-var-kind", t("rundlg.paceUnit")));
     rows.append(pace);
 
     const collect = () => {
@@ -156,9 +153,9 @@ export function askRunVars({
 
     const actions = el("div", "sf-run-actions");
     const start = el("button", "sf-btn sf-primary",
-      mode === "step" ? "⏯ Debug" : "▶ Run");
+      mode === "step" ? `⏯ ${t("rundlg.go.debug")}` : `▶ ${t("rundlg.go.run")}`);
     start.onclick = () => finish(collect());
-    const cancel = el("button", "sf-btn", "Cancel");
+    const cancel = el("button", "sf-btn", t("common.cancel"));
     cancel.onclick = () => finish(null);
     actions.append(start, cancel);
     modal.body.append(actions);

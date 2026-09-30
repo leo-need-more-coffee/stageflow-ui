@@ -204,6 +204,28 @@ meaning of the port, the arrow in a data row by CSS from its direction
 (`.sf-row-datain` / `.sf-row-dataout`). So "where it goes" and "where it came
 from" are visible without reading the text of the row.
 
+## The language
+
+The interface's text lives in `i18n/<tag>.json` — a flat `{key: string}`
+catalog per language — and the languages on offer are the keys of
+`i18n/index.json`, each named in its own language. Nothing in the code names a
+language except the fallback (`en`, the language the keys were written in), so
+adding a language is adding a file and a line, without touching the editor.
+
+The choice is an item with a tick under "Language" in the "View" section. What
+the reader gets is decided in this order: `?lang=ru` in the address, then the
+choice they made here last time, then what the browser asks for — a link
+somebody was handed outranks a saved choice, and a saved choice outranks the
+browser, which is the right default only until there is a choice to respect.
+`ru-RU` finds the `ru` catalog, so a regional tag needs no file of its own.
+
+Two catalogs are held at once, the chosen one and the fallback, so a
+half-finished translation reads as English where it is unfinished rather than as
+`toolbar.file`; a key that is in neither is drawn as itself and complained about
+in the console — obvious while developing, harmless to a reader. Plural forms
+come from `Intl.PluralRules`, which knows that Russian has three and English
+two, so a count is never glued to a bare noun.
+
 ## The session: undo, panels, reloads
 
 The editor is a workplace rather than a demonstration, so the state survives

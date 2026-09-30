@@ -9,6 +9,7 @@
  *
  * Run: node tests/secrets.mjs
  */
+import "./_catalog.mjs";
 import { SECRET_MASK, SecretStore, validSecretName } from "../js/secrets.js";
 
 let failed = 0;

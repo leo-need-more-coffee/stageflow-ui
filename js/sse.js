@@ -20,6 +20,7 @@
  * frames separated by a blank line, `data:` lines concatenated, everything
  * else (a `: keep-alive` comment, a `retry:`) ignored.
  */
+import { t } from "./i18n.js";
 
 const RECONNECT_MS = 1000;
 const RECONNECT_TRIES = 5;
@@ -79,7 +80,7 @@ export class EventStream {
       headers: { Accept: "text/event-stream" },
     });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    if (!response.body) throw new Error("the stream has no body");
+    if (!response.body) throw new Error(t("sse.noBody"));
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder();

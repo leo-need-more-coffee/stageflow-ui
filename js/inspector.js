@@ -23,14 +23,15 @@
  *   stage-spec  — the stage reference.
  */
 import { variablesOf } from "./dataflow.js";
+import { t, tn } from "./i18n.js";
 import { paintIcon } from "./icons.js";
 import { argRows, kindOf, outputRows, writeArgRows, writeOutputRows } from "./kinds.js";
 
 /** The panel sections top to bottom; `more` is drawn separately, collapsed. */
 const GROUPS = [
   { key: "main", title: null },
-  { key: "in", title: "What it gets" },
-  { key: "out", title: "What it gives" },
+  { key: "in", title: "group.in" },
+  { key: "out", title: "group.out" },
 ];
 
 /** Human labels for the order ports, keyed by the stable port key: the JSON key
@@ -38,8 +39,8 @@ const GROUPS = [
  * itself (`human`) where the shared word does not fit — the body of a loop is
  * not the body of a block. */
 const PORT_LABELS = {
-  next: "onwards", then: "if yes", else: "if no",
-  default: "otherwise", body: "block body",
+  next: "port.next", then: "port.then", else: "port.else",
+  default: "port.default", body: "port.body",
 };
 
 function el(tag, className, text) {
@@ -116,34 +117,28 @@ export class Inspector {
 
   #renderOverview() {
     const { model } = this.env;
-    this.host.append(el("h3", "", "Pipeline"));
+    this.host.append(el("h3", "", t("panel.pipeline")));
     const graphName = model.graphKey === null
-      ? "the root graph"
-      : `the subpipeline '${model.graphKey}'`;
-    this.host.append(el("p", "sf-muted",
-      `${graphName}: nodes ${model.graph.nodes.length}, entry: ${model.graph.entry || "—"}`));
-    this.host.append(el("p", "sf-muted",
-      "Arrows are the execution order, colored dots are the variable flows."));
+      ? t("panel.rootGraph")
+      : t("panel.subGraph", { id: model.graphKey });
+    this.host.append(el("p", "sf-muted", t("panel.graphStats", {
+      graph: graphName, nodes: model.graph.nodes.length, entry: model.graph.entry || "—",
+    })));
+    this.host.append(el("p", "sf-muted", t("panel.legend")));
 
     // the panel with nothing selected is the one place there is room to write
     // WHAT a graph is assembled with: otherwise the canvas gestures have to be
     // guessed
-    this.host.append(el("div", "sf-section-title", "How to assemble a graph"));
+    this.host.append(el("div", "sf-section-title", t("panel.howTo")));
     const tips = el("ul", "sf-tips");
-    for (const text of [
-      "Pull a wire from the bottom port of a card: onto a node it links them, into empty space it offers to create a node there.",
-      "A click on a port takes the wire until the next click — Esc lets it go.",
-      "Hover a link: ⊕ inserts a node into it, × cuts it.",
-      "A node from the palette can be dragged: onto a link it is inserted into it, onto a card it is attached after it.",
-      "A double click on empty space creates a node right there.",
-      "The middle button pans, the right one draws a selection marquee; Shift-click adds a node to the selection.",
-      "Delete removes what is selected: a single node as well as a whole group.",
-      "Ctrl+Z undoes an edit, Ctrl+Shift+Z brings it back; the same is in the Edit menu.",
-      "Ctrl+C / Ctrl+X / Ctrl+V copy, cut and paste nodes under the cursor.",
-      "The handle on the panel edge folds it away; the same handle at the edge of the canvas "
-        + "brings it back (or just click a node — its panel unfolds by itself).",
-      "Shift+F fits the graph into the screen, Shift+L lays it out again; the rest is in the menu bar.",
-    ]) tips.append(el("li", "", text));
+    // as many tips as the catalog holds: a translation may merge two of them
+    // or add one, and neither should mean editing this loop
+    for (let n = 1; ; n += 1) {
+      const key = `panel.tip.${n}`;
+      const text = t(key);
+      if (text === key) break;
+      tips.append(el("li", "", text));
+    }
     this.host.append(tips);
   }
 
@@ -151,19 +146,18 @@ export class Inspector {
    * what is in the group and what can be done with it. A click on a name
    * narrows the selection to a single node — to its ordinary form. */
   #renderNodes(sel) {
-    this.host.append(el("h3", "", `Nodes selected: ${sel.ids.length}`));
-    this.host.append(el("p", "sf-muted",
-      "Drag any of them and all of them move. Delete removes the selected ones."));
+    this.host.append(el("h3", "", tn("panel.selected", sel.ids.length)));
+    this.host.append(el("p", "sf-muted", t("panel.selected.about")));
     const box = el("div", "sf-tags");
     for (const id of sel.ids) {
       const tag = el("button", "sf-tag", id);
-      tag.title = "show this node";
+      tag.title = t("panel.showNode");
       tag.onclick = () => this.env.selection.set({ type: "node", id });
       box.append(tag);
     }
     this.host.append(box);
 
-    const remove = el("button", "sf-btn sf-danger", "Delete selected");
+    const remove = el("button", "sf-btn sf-danger", t("panel.deleteSelected"));
     remove.onclick = () => {
       this.env.model.removeNodes(sel.ids);
       this.env.selection.clear();
@@ -174,10 +168,10 @@ export class Inspector {
   #renderEdge(sel) {
     const node = this.env.model.node(sel.from);
     const port = node && kindOf(node).orderPorts(node)[sel.portIndex];
-    this.host.append(el("h3", "", "Transition"));
+    this.host.append(el("h3", "", t("panel.edge")));
     this.host.append(el("p", "sf-muted",
       port ? `${sel.from} [${port.label}] → ${port.get?.() ?? "—"}` : "?"));
-    const remove = el("button", "sf-btn sf-danger", "Delete transition");
+    const remove = el("button", "sf-btn sf-danger", t("panel.deleteEdge"));
     remove.onclick = () => {
       this.env.model.disconnect(sel.from, sel.portIndex);
       this.env.selection.clear();
@@ -213,7 +207,7 @@ export class Inspector {
     for (const { key, title } of GROUPS) {
       const own = fields.filter((f) => (f.group ?? "main") === key);
       if (!own.length) continue;
-      this.host.append(this.#section(title, own.map((f) => this.#control(f))));
+      this.host.append(this.#section(title && t(title), own.map((f) => this.#control(f))));
     }
 
     const ports = this.#flowSection(node, kind);
@@ -221,7 +215,7 @@ export class Inspector {
 
     this.host.append(this.#moreSection(node, fields.filter((f) => f.group === "more")));
 
-    const remove = el("button", "sf-btn sf-danger", "Delete node");
+    const remove = el("button", "sf-btn sf-danger", t("panel.deleteNode"));
     remove.onclick = () => {
       this.env.model.removeNode(node.id);
       this.env.selection.clear();
@@ -242,7 +236,7 @@ export class Inspector {
     const ports = kind.orderPorts(node).filter((port) => !port.add && !port.removeItem);
     if (!ports.length) return null;
     const controls = ports.map((port) => {
-      const human = port.human ?? PORT_LABELS[port.key];
+      const human = port.human ?? (PORT_LABELS[port.key] && t(PORT_LABELS[port.key]));
       const label = el("span", "sf-field-label");
       label.append(human ?? port.label);
       if (human) label.append(el("span", "sf-key-hint", port.label));
@@ -254,13 +248,13 @@ export class Inspector {
       wrap.append(label, select);
       return wrap;
     });
-    return this.#section("Next", controls);
+    return this.#section(t("group.flow"), controls);
   }
 
   /** "More" — what is rarely touched: the node name, entry, retries, copies. */
   #moreSection(node, fields) {
     const box = el("details", "sf-more");
-    box.append(el("summary", "sf-section-title", "More: node name, entry, retries, copies"));
+    box.append(el("summary", "sf-section-title", t("group.more")));
     box.append(this.#idField(node), this.#entryRow(node));
     for (const field of fields) box.append(this.#control(field));
     return box;
@@ -270,7 +264,7 @@ export class Inspector {
   #nodeSelect(value, onChange) {
     const select = el("select");
     for (const id of ["", ...this.env.model.graph.nodes.map((n) => n.id)]) {
-      const opt = el("option", "", id === "" ? "— not set —" : id);
+      const opt = el("option", "", id === "" ? t("common.unset") : id);
       opt.value = id;
       select.append(opt);
     }
@@ -281,7 +275,7 @@ export class Inspector {
 
   #idField(node) {
     const wrap = el("label", "sf-field");
-    wrap.append(el("span", "sf-field-label", "node name (id)"));
+    wrap.append(el("span", "sf-field-label", t("panel.nodeId")));
     const input = el("input");
     input.value = node.id;
     this.#bindInput(input, () => {
@@ -297,13 +291,13 @@ export class Inspector {
     const graph = this.env.model.graph;
     const isEntry = graph.entry === node.id;
     const owner = graph.nodes.find((n) => n.type === "entry");
-    const btn = el("button", "sf-btn", isEntry ? "✓ entry of this graph" : "Make it the entry");
+    const btn = el("button", "sf-btn", t(isEntry ? "panel.isEntry" : "panel.makeEntry"));
     btn.disabled = isEntry;
     // the start of a graph is set by an entry node; making somebody else the
     // entry point means getting an entry node nobody ever enters
     if (!isEntry && owner) {
       btn.disabled = true;
-      btn.title = `the entry point is set by the entry node '${owner.id}'`;
+      btn.title = t("panel.entryOwned", { node: owner.id });
     }
     btn.onclick = () => this.env.model.setEntry(node.id);
     return btn;
@@ -520,29 +514,23 @@ export class Inspector {
     const acceptsExtra = (spec?.arguments ?? []).some((a) => a.name === "*");
     const extra = rows.filter((r) => !declared.some((a) => a.name === r.name));
     if (extra.length && declared.length) {
-      box.append(el("div", "sf-args-note", acceptsExtra
-        ? "additional arguments: the stage accepts any"
-        : "the stage did not declare such arguments"));
+      box.append(el("div", "sf-args-note",
+                    t(acceptsExtra ? "args.extra.ok" : "args.extra.unknown")));
     }
     for (const row of extra) {
       box.append(this.#argRow({
         name: row.name,
-        description: acceptsExtra
-          ? "the stage accepts any additional arguments"
-          : "the stage did not declare such an argument — it will receive it, "
-            + "but if it does not read it, the value simply goes unused",
+        description: t(acceptsExtra ? "args.extra.ok.hint" : "args.extra.unknown.hint"),
       }, row, write, true));
     }
 
     if (!declared.length && !extra.length) {
-      box.append(el("div", "sf-muted", spec
-        ? "the stage declared no arguments"
-        : "no stage selected, or its spec is not loaded"));
+      box.append(el("div", "sf-muted", t(spec ? "args.none" : "args.noSpec")));
     }
 
-    const add = el("button", "sf-btn sf-btn-small", "+ own argument");
+    const add = el("button", "sf-btn sf-btn-small", t("args.addOwn"));
     add.onclick = () => {
-      const name = prompt("Argument name:")?.trim();
+      const name = prompt(t("accept.argumentPrompt"))?.trim();
       if (name) write(name, { source: "vars", value: "" });
     };
     box.append(add);
@@ -559,14 +547,14 @@ export class Inspector {
     head.append(el("span", "sf-arg-name", arg.name));
     if (required) {
       const star = el("span", "sf-arg-req", "*");
-      star.title = "required argument";
+      star.title = t("args.required");
       head.append(star);
     }
     if (arg.type) head.append(el("span", "sf-chip", arg.type));
-    if (arg.optional) head.append(el("span", "sf-arg-opt", "optional"));
+    if (arg.optional) head.append(el("span", "sf-arg-opt", t("args.optional")));
     if (removable) {
       const x = el("button", "sf-tag-x", "×");
-      x.title = "remove the argument";
+      x.title = t("args.remove");
       x.onclick = () => write(arg.name, null);
       head.append(x);
     }
@@ -576,9 +564,9 @@ export class Inspector {
     const mode = !row ? "" : { const: "const", cel: "cel" }[row.source] ?? "var";
     const line = el("div", "sf-arg-line");
     const source = el("select", "sf-arg-source");
-    for (const [value, label] of [["", "— not set —"], ["var", "variable"],
-      ["const", "value"], ["cel", "expression"]]) {
-      const opt = el("option", "", label);
+    for (const [value, key] of [["", "common.unset"], ["var", "field.source.vars"],
+      ["const", "field.source.const"], ["cel", "field.source.cel"]]) {
+      const opt = el("option", "", t(key));
       opt.value = value;
       source.append(opt);
     }
@@ -600,7 +588,7 @@ export class Inspector {
       const input = el("input");
       input.classList.add("sf-cel");
       input.value = row.value ?? "";
-      input.placeholder = "CEL: vars.count + 1";
+      input.placeholder = t("args.celPlaceholder");
       this.#bindInput(input, () => write(arg.name, { source: row.source, value: input.value }));
       line.append(input);
     }
@@ -657,9 +645,7 @@ export class Inspector {
     }
 
     if (!declared.length && !extra.length) {
-      box.append(el("div", "sf-muted", spec
-        ? "the stage declared no outputs"
-        : "no stage selected, or its spec is not loaded"));
+      box.append(el("div", "sf-muted", t(spec ? "outs.none" : "args.noSpec")));
     }
 
     // What a stage result consists of is determined by its code, a field cannot
@@ -669,11 +655,10 @@ export class Inspector {
     // declared `*`), the contract is unknown — then the field is typed by hand.
     const contractKnown = known.length && !known.includes("*");
     const add = el("button", "sf-btn sf-btn-small",
-      contractKnown ? "+ variable from an expression" : "+ result field");
+      t(contractKnown ? "outs.addExpr" : "outs.addField"));
     add.onclick = () => {
-      const name = prompt(contractKnown
-        ? "Pipeline variable name:"
-        : "Stage result field:")?.trim();
+      const name = prompt(t(contractKnown ? "outs.addExpr.prompt" : "outs.addField.prompt"))
+        ?.trim();
       if (!name) return;
       if (contractKnown) writeAt(outputRows(node).length, { cel: true, src: "", dest: name });
       else write(name, { dest: name });
@@ -693,7 +678,7 @@ export class Inspector {
     toggle.append(check, el("span", "", out.name));
     head.append(toggle);
     if (out.type) head.append(el("span", "sf-chip", out.type));
-    if (!row) head.append(el("span", "sf-arg-opt", "not saved"));
+    if (!row) head.append(el("span", "sf-arg-opt", t("outs.notSaved")));
     wrap.append(head);
     if (out.description) wrap.append(el("div", "sf-arg-hint", out.description));
 
@@ -720,22 +705,21 @@ export class Inspector {
     const head = el("div", "sf-arg-head");
     const src = el("input", "sf-arg-name-input" + (row.cel ? " sf-cel" : ""));
     src.value = row.src ?? "";
-    src.placeholder = row.cel ? "CEL expression" : "result field";
+    src.placeholder = t(row.cel ? "outs.exprPlaceholder" : "outs.fieldPlaceholder");
     this.#bindInput(src, () => writeAt(index, { src: src.value.trim() }));
-    head.append(src, el("span", "sf-chip", row.cel ? "expression" : "field"));
+    head.append(src, el("span", "sf-chip", t(row.cel ? "outs.expr" : "outs.field")));
     const x = el("button", "sf-tag-x", "×");
-    x.title = "remove the output";
+    x.title = t("outs.remove");
     x.onclick = () => writeAt(index, null);
     head.append(x);
     wrap.append(head);
 
     if (unknownField) {
       wrap.append(el("div", "sf-arg-hint",
-        `the stage does not return such a field — it gives: ${known.join(", ")}`));
+                     t("outs.unknownField", { available: known.join(", ") })));
     } else if (row.cel) {
-      wrap.append(el("div", "sf-arg-hint", row.src
-        ? "a pipeline variable: the value is computed by the expression, the stage has nothing to do with it"
-        : "set an expression — for example `5`, `vars.n + 1` or `output.value`"));
+      wrap.append(el("div", "sf-arg-hint",
+                     t(row.src ? "outs.exprHint" : "outs.exprEmpty")));
     }
 
     const line = el("div", "sf-arg-line");
@@ -751,12 +735,12 @@ export class Inspector {
   #varInput(value, onChange) {
     const input = el("input", "sf-var-input");
     input.value = value ?? "";
-    input.placeholder = "variable name";
+    input.placeholder = t("field.varName");
     if (value && this.env.secrets?.has(value)) {
       // marked but not revealed: it is visible that a key rather than an
       // ordinary variable is wired into the stage — and still not visible which
       input.classList.add("sf-var-secret");
-      input.title = "a secret from the store: the value is substituted at start";
+      input.title = t("field.secretHint");
     }
     const list = el("datalist");
     list.id = `sf-vars-${Math.random().toString(36).slice(2, 8)}`;
@@ -767,7 +751,7 @@ export class Inspector {
     for (const name of [...new Set([...variablesOf(this.env.model.graph), ...secretNames])].sort()) {
       const opt = el("option");
       opt.value = name;
-      if (secretNames.includes(name)) opt.label = `${name} — secret`;
+      if (secretNames.includes(name)) opt.label = t("field.secretOption", { name });
       list.append(opt);
     }
     input.setAttribute("list", list.id);
@@ -792,7 +776,7 @@ export class Inspector {
       check.type = "checkbox";
       check.checked = row.value === true || row.value === "true";
       check.onchange = () => set(String(check.checked));
-      box.append(check, el("span", "", "yes / no"));
+      box.append(check, el("span", "", t("field.yesNo")));
       return box;
     }
 
@@ -801,7 +785,7 @@ export class Inspector {
     input.value = row.value ?? "";
     input.placeholder = type === "list" ? '["a", "b"]'
       : type === "object" ? '{"k": 1}'
-      : "value or JSON";
+      : t("field.valueOrJson");
     this.#bindInput(input, () => set(input.value));
     return input;
   }
@@ -810,23 +794,24 @@ export class Inspector {
    * (StagesLibrary). */
   #stageSpec(field) {
     const wrap = el("details", "sf-spec");
-    wrap.append(el("summary", "sf-field-label", "stage spec"));
+    wrap.append(el("summary", "sf-field-label", t("spec.title")));
     const spec = this.env.stages.get(field.stage());
     if (!spec) {
       wrap.append(el("div", "sf-muted",
-        this.env.stages.loaded ? "the stage is not in the registry" : "stage specs are not loaded"));
+        t(this.env.stages.loaded ? "spec.unknownStage" : "spec.notLoaded")));
       return wrap;
     }
     if (spec.description) wrap.append(el("div", "sf-muted", spec.description));
     for (const section of ["arguments", "outputs"]) {
       const fields = spec[section] ?? [];
       if (!fields.length) continue;
-      wrap.append(el("div", "sf-spec-title", section));
+      wrap.append(el("div", "sf-spec-title", t(`spec.${section}`)));
       for (const f of fields) {
         const row = el("div", "sf-spec-row");
         row.append(el("code", "", f.name));
         row.append(el("span", "sf-muted",
-          ` ${f.type}${f.optional ? " (opt.)" : ""}${f.description ? " — " + f.description : ""}`));
+          ` ${f.type}${f.optional ? ` ${t("spec.opt")}` : ""}`
+          + `${f.description ? " — " + f.description : ""}`));
         wrap.append(row);
       }
     }

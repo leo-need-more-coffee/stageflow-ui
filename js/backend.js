@@ -20,6 +20,10 @@
  *     configurable alongside its value, because `Authorization: Bearer …`,
  *     `X-Api-Key: …` and whatever a gateway put there are all real. The
  *     editor authenticates nothing itself — it carries what it was given.
+ *   - **language**. The stage specs are prose, and that prose is the backend's
+ *     to translate: the editor's own catalog knows nothing about a host's
+ *     stages. So the language the editor is drawn in travels as
+ *     `Accept-Language`, and a backend that negotiates it answers in it.
  *   - **plan**. What the editor should draw and validate against, sent as
  *     `?plan=` on the two questions asked before a run. A backend that serves
  *     plans answers about that one instead of the caller's own, which is what
@@ -27,6 +31,7 @@
  *     the editor can ask. It is a request to be SHOWN something: what a run
  *     is actually allowed is the backend's business and is decided there.
  */
+import { FALLBACK, locale, t } from "./i18n.js";
 
 /**
  * Brings a typed address to a shape that can be pasted into a URL.
@@ -65,7 +70,7 @@ export class Backend {
    */
   constructor(url, { auth = null, plan = null } = {}) {
     this.url = normalizeBackendUrl(url);
-    if (!this.url) throw new Error(`Not a usable backend address: ${url}`);
+    if (!this.url) throw new Error(t("backend.badAddress", { url }));
     this.setAuth(auth);
     this.plan = plan || null;
   }
@@ -125,7 +130,14 @@ export class Backend {
    * that will start failing the day the backend wants a token.
    */
   fetch(url, init = {}) {
-    return fetch(url, { ...init, headers: { ...this.headers, ...(init.headers ?? {}) } });
+    return fetch(url, {
+      ...init,
+      headers: {
+        "Accept-Language": acceptLanguage(),
+        ...this.headers,
+        ...(init.headers ?? {}),
+      },
+    });
   }
 
   /**
@@ -180,8 +192,8 @@ export class Backend {
       // fetch tells a refused connection, a DNS failure and a CORS block apart
       // only in the console; the user gets the one thing worth acting on
       throw new Error(abort.signal.aborted
-        ? "the backend did not answer in time"
-        : "the backend is not reachable (is it running, and does it allow CORS?)");
+        ? t("backend.timeout")
+        : t("backend.unreachable"));
     } finally {
       clearTimeout(timer);
     }
@@ -190,19 +202,19 @@ export class Backend {
       const said = await response.json().catch(() => null);
       throw new Error(said?.error
         ? `${said.error} (HTTP ${response.status})`
-        : `the backend wants credentials (HTTP ${response.status})`);
+        : t("backend.needsAuth", { status: response.status }));
     }
-    if (!response.ok) throw new Error(`the backend answered HTTP ${response.status}`);
+    if (!response.ok) throw new Error(t("backend.http", { status: response.status }));
 
     let data;
     try {
       data = await response.json();
     } catch {
-      throw new Error("the answer is not JSON — is this a StageFlow backend?");
+      throw new Error(t("backend.notJson"));
     }
     const stages = data?.stages ?? data;
     if (!stages || typeof stages !== "object") {
-      throw new Error("the answer has no stages — is this a StageFlow backend?");
+      throw new Error(t("backend.noStages"));
     }
     return { stages, count: Object.keys(stages).length };
   }
@@ -245,6 +257,20 @@ export function mixedContentProblem(url) {
  * Headers fit to send: named, non-empty, and without the characters that
  * would make `fetch` throw on the whole request rather than skip the header.
  */
+/**
+ * The editor's language as an `Accept-Language` value.
+ *
+ * The chosen language first and the fallback behind it: a backend with no
+ * catalog for the choice should reach for the language the specs were written
+ * in, rather than for whatever the browser happened to ask for on its own.
+ *
+ * A safelisted header, so it adds no CORS preflight to a cross-origin backend.
+ */
+export function acceptLanguage() {
+  const chosen = locale();
+  return chosen === FALLBACK ? chosen : `${chosen}, ${FALLBACK};q=0.8`;
+}
+
 export function cleanHeaders(headers) {
   const out = {};
   for (const [name, value] of Object.entries(headers ?? {})) {
