@@ -161,7 +161,9 @@ export class Editor extends EventTarget {
     else this.reloadStages();
 
     const pipeline = saved?.pipeline ?? options.pipeline;
-    if (pipeline) this.setPipeline(pipeline);
+    // a restored session keeps its coordinates: they are where this reader
+    // dragged the cards, and two that touch are their arrangement
+    if (pipeline) this.setPipeline(pipeline, { keepLayout: Boolean(saved?.pipeline) });
     else this.#renderAll();
     if (saved) this.#restoreView(saved);
 
@@ -209,12 +211,17 @@ export class Editor extends EventTarget {
 
   getPipeline() { return this.model.toJSON(); }
 
-  setPipeline(pipeline) {
+  /**
+   * @param keepLayout the coordinates are ours already — a session coming back.
+   *   A document from anywhere else is checked: coordinates that stack the
+   *   cards get replaced by a real layout (see `normalizeGraph`).
+   */
+  setPipeline(pipeline, options = {}) {
     // another document — another set of starting arguments: the values of the
     // previous run belonged to the previous graph and must not be substituted
     // silently
     this.runVars = { vars: {}, entered: {} };
-    this.model.setPipeline(pipeline);
+    this.model.setPipeline(pipeline, options);
   }
 
   setStages(specs) { this.stages.setSpecs(specs); }
