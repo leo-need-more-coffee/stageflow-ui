@@ -468,6 +468,20 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .sf-canvas.sf-hl .sf-edge-data.sf-hl-on { opacity: 1; stroke-width: 2.4; }
 .sf-canvas.sf-hl .sf-edge-order { opacity: 0.25; }
 
+/* The wire IN HAND is never dimmed and never hidden. Everything above is about
+   edges at rest — how much of the data layer is on the canvas at once — and a
+   temporary edge carries `sf-edge-data` to be the colour of a data wire, which
+   dragged it into `display: none` of the "focus" mode: a variable was pulled
+   out of a card and nothing followed the cursor. Last in the file and as
+   specific as those rules, so it wins in every mode. */
+.sf-edge-temp,
+.sf-canvas.sf-data-focus .sf-edge-temp,
+.sf-canvas.sf-hl .sf-edge-temp {
+  display: inline;
+  opacity: 1;
+  stroke-width: 1.8;
+}
+
 .sf-row.sf-hl-on {
   background: color-mix(in srgb, var(--accent) 12%, transparent);
   border-radius: 3px;
