@@ -480,6 +480,11 @@
   "backend.notJson": "the answer is not JSON — is this a StageFlow backend?",
   "backend.noStages": "the answer has no stages — is this a StageFlow backend?",
 
+  "review.keep": "✓ keep",
+  "review.keep.hint": "keep this change: the marks go and there is no way back to the version before it",
+  "review.back": "↩ put back",
+  "review.back.hint": "put the graph back the way it was before this change (Escape, or Ctrl+Z)",
+
   "bridge.connecting": "AI bridge: connecting…",
   "bridge.live": "AI bridge",
   "bridge.did": "AI: {note}",

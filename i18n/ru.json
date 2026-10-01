@@ -480,6 +480,11 @@
   "backend.notJson": "ответ не JSON — это точно бэкенд StageFlow?",
   "backend.noStages": "в ответе нет стадий — это точно бэкенд StageFlow?",
 
+  "review.keep": "✓ оставить",
+  "review.keep.hint": "оставить правку: пометки уходят, вернуться к прежней версии будет нельзя",
+  "review.back": "↩ вернуть",
+  "review.back.hint": "вернуть граф таким, каким он был до этой правки (Escape или Ctrl+Z)",
+
   "bridge.connecting": "мост с ИИ: подключаюсь…",
   "bridge.live": "мост с ИИ",
   "bridge.did": "ИИ: {note}",

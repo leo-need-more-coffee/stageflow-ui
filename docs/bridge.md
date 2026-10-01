@@ -33,20 +33,44 @@ a particular link.
 
 ## What arrives goes through the ordinary door
 
-A graph from the agent is applied with the same `setPipeline` the import dialog
-uses, which is worth knowing because of what it means:
+A graph from the agent goes through the same door an imported one does:
 
-- **undo works.** Whatever the model did to the graph is one `Ctrl+Z` away from
-  being gone. It is not a special mode with a separate history;
 - nodes that came without coordinates are **laid out** by the editor, so an
   agent writing plain JSON gets a readable graph rather than a heap at the
   origin;
 - the graph is **validated** on arrival like any other, so an agent's mistake
-  appears in the status bar where every other mistake appears.
+  appears in the status bar where every other mistake appears;
+- and it is **yours to keep or to put back** — see below. Loading a document
+  starts a new edit history, so ordinary undo could not reach back past it;
+  that is what the two buttons are for.
 
 Edits going the other way are sent after a short pause rather than on every
 keystroke — dragging a node is dozens of events, and the agent needs the result,
 not the dragging.
+
+## Nothing arrives without a way out of it
+
+A graph from the bridge is applied at once — seeing it is the point, and a
+preview of a graph is a graph you cannot look inside — and until you answer for
+it, the status bar holds two buttons:
+
+    ✓ keep      ↩ put back
+
+**Put back** restores the graph exactly as it was before the change, keeping
+your view and your place on the canvas. `Escape` and `Ctrl+Z` do the same
+thing: the first `Ctrl+Z` after somebody else changed your graph means "put it
+back", which is the gesture everybody tries first. The restored graph is sent
+to the agent like any other edit, so it is working from what you kept rather
+than from what it hoped.
+
+**Keep** takes the marks off and drops the way back. So does editing anything
+yourself: somebody who has started working on a graph has answered the
+question, and being asked again would be nagging.
+
+Two pushes in a row leave one question, and putting it back goes to the version
+**you** last had — not to the assistant's previous attempt. The marks stay on
+the cards until you answer: they are not decoration, they are the thing being
+decided about, and a question does not time out.
 
 ## An incoming graph does not take the canvas away from you
 
@@ -65,9 +89,10 @@ where it was and released, so it moves to its new place over a third of a
 second. Nothing is measured and no second layout happens: the distance is in
 the graph.
 
-**What was touched is marked** for a few seconds — green for a node that is
-new, amber for one that now says something different, the two oldest colours
-there are for a diff. Position is deliberately not a change: a relayout moves
+**What was touched is marked** — green for a node that is new, amber for one
+that now says something different, the two oldest colours there are for a diff.
+A change from the bridge keeps its marks until it is answered for; anything
+else fades after a few seconds. Position is deliberately not a change: a relayout moves
 everything and alters nothing. The status bar carries the count beside the
 agent's own note:
 

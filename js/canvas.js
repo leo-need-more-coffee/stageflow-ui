@@ -268,7 +268,7 @@ export class CanvasView {
    * somebody else just rewrote, "what did it touch" is the first question, and
    * the answer is otherwise a diff nobody can run.
    */
-  showChange(change) {
+  showChange(change, { hold = false } = {}) {
     if (!change || (!change.moved?.size && !change.touched)) return;
     clearTimeout(this.#marksTimer);
 
@@ -290,10 +290,12 @@ export class CanvasView {
       }
     });
 
-    this.#marksTimer = setTimeout(() => this.#clearMarks(), MARKS_MS);
+    // `hold`: the marks are not decoration but the thing being decided about,
+    // and a question does not time out
+    if (!hold) this.#marksTimer = setTimeout(() => this.clearMarks(), MARKS_MS);
   }
 
-  #clearMarks() {
+  clearMarks() {
     for (const card of this.nodesEl.querySelectorAll(
       ".sf-node-new, .sf-node-edited, .sf-node-gliding")) {
       card.classList.remove("sf-node-new", "sf-node-edited", "sf-node-gliding");

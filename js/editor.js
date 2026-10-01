@@ -218,6 +218,62 @@ export class Editor extends EventTarget {
    * bar (see `docs/bridge.md`). */
   lastChange = null;
 
+  /**
+   * A graph somebody else put here that has not been answered yet:
+   * `{before, change}`. While it stands, the marks on the cards stay, the
+   * status bar offers to keep it or to put it back, and the keyboard answers
+   * too (`Escape` or `Ctrl+Z` put it back).
+   *
+   * Why it exists: `setPipeline` replaces the document, and a document has no
+   * undo into the one before it — so until now a graph from an assistant could
+   * not be taken back at all. Showing a change and offering no way out of it
+   * is the thing that makes people stop letting the assistant touch anything.
+   */
+  pending = null;
+
+  /**
+   * Put a graph from somewhere else on the canvas, to be kept or put back.
+   *
+   * Applied at once rather than previewed: seeing it IS the point, and a
+   * preview of a graph is a graph you cannot look inside. What it buys is the
+   * way out — the version before it is held until the question is answered.
+   */
+  applyIncoming(pipeline) {
+    const before = this.getPipeline();
+    const had = this.pending?.before ?? before;
+    this.setPipeline(pipeline);
+    if (this.lastChange && !this.lastChange.fresh) {
+      // a second push before the first was answered: the way back is still to
+      // where the PERSON left off, not to the assistant's previous attempt
+      this.pending = { before: had, change: this.lastChange };
+      this.canvas.showChange(this.lastChange, { hold: true });
+    } else {
+      this.pending = null;
+    }
+    this.#renderStatus();
+    return this.lastChange;
+  }
+
+  /** Keep it. The marks go, the way back is dropped. */
+  acceptChange() {
+    if (!this.pending) return false;
+    this.pending = null;
+    this.canvas.clearMarks();
+    this.#renderStatus();
+    return true;
+  }
+
+  /** Put it back the way it was, keeping the view and the place on the canvas. */
+  revertChange() {
+    if (!this.pending) return false;
+    const { before } = this.pending;
+    this.pending = null;
+    this.setPipeline(before, { keepLayout: true });
+    this.canvas.clearMarks();
+    this.#renderStatus();
+    return true;
+  }
+
   getPipeline() { return this.model.toJSON(); }
 
   /**
@@ -583,6 +639,12 @@ export class Editor extends EventTarget {
   #wire() {
     this.model.addEventListener("change", () => {
       this.#pruneSelection();
+      // editing it is keeping it: somebody who has started working on a graph
+      // has answered the question, and being asked again would be nagging
+      if (this.pending) {
+        this.pending = null;
+        this.canvas.clearMarks();
+      }
       this.issues = this.validate();
       this.#renderAll();
       this.#persist();
@@ -653,6 +715,10 @@ export class Editor extends EventTarget {
       const key = letterOf(e);
       if (key === "z") {
         e.preventDefault();
+        // the first Ctrl+Z after somebody else changed the graph means "put it
+        // back" — there is no history to walk into anyway, a loaded document
+        // starts a new one
+        if (!e.shiftKey && this.revertChange()) return;
         e.shiftKey ? this.model.redo() : this.model.undo();
         return;
       }
@@ -700,7 +766,10 @@ export class Editor extends EventTarget {
       this.runner.step();
       return;
     }
-    if (e.key === "Escape") this.selection.clear();
+    if (e.key === "Escape") {
+      if (this.revertChange()) return;
+      this.selection.clear();
+    }
     if (e.key !== "Delete" && e.key !== "Backspace") return;
     if (!this.selection.current) return;
     e.preventDefault();
@@ -763,6 +832,18 @@ export class Editor extends EventTarget {
       if (note.title) chip.title = note.title;
       if (note.onClick) chip.onclick = note.onClick;
       this.statusEl.append(chip);
+    }
+    // the answers come after what happened: read what was done, then decide
+    if (this.pending) {
+      const keep = el("button", "sf-status-note sf-status-act sf-status-keep");
+      keep.textContent = t("review.keep");
+      keep.title = t("review.keep.hint");
+      keep.onclick = () => this.acceptChange();
+      const back = el("button", "sf-status-note sf-status-act sf-status-back");
+      back.textContent = t("review.back");
+      back.title = t("review.back.hint");
+      back.onclick = () => this.revertChange();
+      this.statusEl.append(keep, back);
     }
     if (!this.issues.length) {
       const ok = el("span", "sf-status-ok");

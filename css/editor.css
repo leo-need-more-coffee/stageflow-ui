@@ -1972,6 +1972,23 @@ button.sf-tag:hover { border-color: var(--accent); color: var(--ink); }
 
 .sf-status-act:hover { border-color: var(--accent-bright); }
 
+/* the two answers to "somebody changed your graph". Coloured as what they do:
+   keeping it is the quiet one, putting it back is the one with a consequence */
+.sf-status-keep {
+  border-color: rgba(78, 203, 134, 0.4);
+  background: rgba(78, 203, 134, 0.1);
+  color: var(--ok);
+}
+
+.sf-status-back {
+  border-color: rgba(232, 184, 92, 0.4);
+  background: rgba(232, 184, 92, 0.1);
+  color: var(--warn);
+}
+
+.sf-status-keep:hover { border-color: var(--ok); }
+.sf-status-back:hover { border-color: var(--warn); }
+
 .sf-status-bridge {
   border-color: var(--accent-soft);
   background: var(--accent-soft);

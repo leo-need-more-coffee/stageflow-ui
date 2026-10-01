@@ -259,7 +259,9 @@ export class Bridge {
     if (message?.type !== "graph" || !message.pipeline) return;
     this.#applying = true;
     try {
-      this.editor.setPipeline(message.pipeline);
+      // handed over to be kept or put back, not merely loaded: a graph
+      // somebody else put on your canvas needs a way out of it
+      this.editor.applyIncoming(message.pipeline);
       this.note = message.note || "";
       this.onState?.("live", this.note);
     } finally {
