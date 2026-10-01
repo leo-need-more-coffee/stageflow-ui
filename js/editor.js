@@ -212,6 +212,12 @@ export class Editor extends EventTarget {
 
   // ---------------------------------------------------------- public API
 
+  /** What the last `setPipeline` did to the graph: `{added, removed, changed,
+   * moved, fresh}` by node id, or null if nothing has been loaded. Whoever
+   * loaded it may want to say so — the bridge puts the counts in the status
+   * bar (see `docs/bridge.md`). */
+  lastChange = null;
+
   getPipeline() { return this.model.toJSON(); }
 
   /**
@@ -583,7 +589,15 @@ export class Editor extends EventTarget {
       this.dispatchEvent(new Event("change"));
       this.options.onChange?.(this.getPipeline());
     });
-    this.model.addEventListener("reset", () => this.canvas.fitView());
+    this.model.addEventListener("reset", (event) => {
+      const change = event.detail;
+      // a different document is worth fitting the view to; an edit of the one
+      // on screen is not — moving the canvas under somebody who is reading it
+      // is what makes a collaborator feel like an interruption
+      if (!change || change.fresh) this.canvas.fitView();
+      this.lastChange = change ?? null;
+      this.canvas.showChange(change);
+    });
     this.selection.addEventListener("change", () => {
       // a node was selected — so it is about to be looked at or edited: a
       // folded panel unfolds by itself, or a click on a card looks like

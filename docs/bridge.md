@@ -48,6 +48,38 @@ Edits going the other way are sent after a short pause rather than on every
 keystroke — dragging a node is dozens of events, and the agent needs the result,
 not the dragging.
 
+## An incoming graph does not take the canvas away from you
+
+A graph arriving from the bridge is an **edit of what you are looking at**, not
+a document somebody opened, and the editor treats it as one.
+
+**Your view stays where you put it.** Panned and zoomed in on a corner of a
+large graph is exactly the state somebody is in while discussing it, and
+refitting the canvas on every push would make a collaborator feel like an
+interruption. A graph that shares no node with the one on screen is a different
+document and still gets the view fitted to it — the rule is sharing a single
+id, because an assistant rewriting a pipeline keeps the entry.
+
+**Cards travel rather than jump.** A node whose position changed is put back
+where it was and released, so it moves to its new place over a third of a
+second. Nothing is measured and no second layout happens: the distance is in
+the graph.
+
+**What was touched is marked** for a few seconds — green for a node that is
+new, amber for one that now says something different, the two oldest colours
+there are for a diff. Position is deliberately not a change: a relayout moves
+everything and alters nothing. The status bar carries the count beside the
+agent's own note:
+
+    AI: added a branch · +2 ✎2
+
+Nothing is marked when the editor opens, however much is on the canvas. The
+mark means "somebody just touched this", and on a graph nobody has looked at
+yet there is no this.
+
+Under `prefers-reduced-motion` the travel and the fade are off; the colours
+stay.
+
 ## Reloads, and an agent that goes away
 
 Both of those happen constantly, so neither ends the connection.

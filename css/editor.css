@@ -624,6 +624,42 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
   transition: border-color 100ms ease, box-shadow 100ms ease;
 }
 
+/* A card that moved travels there. The transition is put on only while it is
+   travelling: left on, it would lag behind the cursor on every drag. */
+.sf-node-gliding {
+  transition: transform 340ms cubic-bezier(0.2, 0.7, 0.3, 1),
+              border-color 100ms ease, box-shadow 100ms ease;
+  z-index: 2;
+}
+
+/* What somebody else just did to this graph, for as long as it takes to look
+   up from the conversation and find it. Colour alone: a card that also moves
+   or resizes to say "I am new" makes the whole canvas restless. */
+.sf-node-new {
+  border-color: var(--ok);
+  box-shadow: 0 0 0 1px var(--ok), 0 0 18px -4px var(--ok);
+}
+
+/* amber, not another green: the accent of this editor is already teal, and two
+   states a shade apart are two states nobody can tell apart at a glance. Added
+   and changed are the oldest pair of colours there is for a diff */
+.sf-node-edited {
+  border-color: var(--warn);
+  box-shadow: 0 0 0 1px rgba(232, 184, 92, 0.3), 0 0 16px -6px var(--warn);
+}
+
+.sf-node-new, .sf-node-edited { animation: sf-arrive 420ms ease-out; }
+
+@keyframes sf-arrive {
+  from { opacity: 0.25; }
+  to { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sf-node-gliding { transition: none; }
+  .sf-node-new, .sf-node-edited { animation: none; }
+}
+
 .sf-node:active { cursor: grabbing; }
 .sf-node:hover { border-color: rgba(255, 255, 255, 0.22); }
 

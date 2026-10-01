@@ -55,12 +55,23 @@
     // parameter nothing here runs and nothing is drawn. The token is in the
     // fragment on purpose: this page is served by somebody else, and a query
     // parameter would be in their log and in every Referer.
+    // "+2 −1 ✎3", and only the parts that are not zero: a row of noughts is
+    // three times the width and says nothing
+    const counts = () => {
+      const change = window.editor.lastChange;
+      if (!change) return "";
+      return [["+", change.added.length], ["−", change.removed.length],
+              ["✎", change.changed.length]]
+        .filter(([, n]) => n).map(([sign, n]) => `${sign}${n}`).join(" ");
+    };
+
     connectBridge(window.editor, {
       onState: (state, detail) => {
         const said = {
           connecting: () => [t("bridge.connecting"), t("bridge.about"), null],
-          live: () => [detail ? t("bridge.did", { note: detail }) : t("bridge.live"),
-                       t("bridge.about"), null],
+          live: () => [[detail ? t("bridge.did", { note: detail }) : t("bridge.live"),
+                        counts()].filter(Boolean).join(" · "),
+                       [t("bridge.about"), t("bridge.counts")].join("\n\n"), null],
           // the agent's process comes and goes with its session, so a lost
           // bridge is a thing to try again rather than a thing to report
           lost: () => [t("bridge.lost"),

@@ -125,6 +125,7 @@ export class PipelineModel extends EventTarget {
    *   session coming back, not a document from elsewhere.
    */
   setPipeline(data, { keepLayout = false } = {}) {
+    const before = snapshotNodes(this.graph);
     this.#pipeline = normalizePipeline(structuredClone(data), this.spacing, keepLayout);
     this.#graphKey = null;
     // another document — another history: there is no undoing into a foreign
@@ -132,8 +133,12 @@ export class PipelineModel extends EventTarget {
     this.#history = [];
     this.#cursor = -1;
     this.touch();
-    // the whole graph changed — the views should refit the view
-    this.dispatchEvent(new Event("reset"));
+    // What changed, so whoever is watching can tell a new document from an
+    // edit to the one on screen. A document gets the view fitted to it; an
+    // edit must not move the canvas out from under somebody who is reading it.
+    this.dispatchEvent(new CustomEvent("reset", {
+      detail: changeBetween(before, snapshotNodes(this.graph)),
+    }));
   }
 
   reset() {
@@ -391,6 +396,70 @@ export class PipelineModel extends EventTarget {
     while (this.node(`${base}_${n}`)) n += 1;
     return `${base}_${n}`;
   }
+}
+
+// ------------------------------------------------------------------ change
+
+/** Each node as "where it is" and "what it says", by id. */
+function snapshotNodes(graph) {
+  const out = new Map();
+  for (const node of graph?.nodes ?? []) {
+    const { ui, ...metadata } = node.metadata ?? {};
+    const { metadata: _drop, ...rest } = node;
+    out.set(node.id, {
+      x: ui?.x ?? 0,
+      y: ui?.y ?? 0,
+      body: JSON.stringify({ ...rest, metadata }),
+    });
+  }
+  return out;
+}
+
+/**
+ * What happened between two versions of a graph.
+ *
+ * `fresh` is the question that matters to whoever is looking at the canvas:
+ * is this the same graph, edited, or a different document? A document is worth
+ * fitting the view to. An edit is not — moving the canvas while somebody is
+ * reading it is the thing that makes a collaborator feel like an interruption.
+ * Sharing a single node id is enough to call it the same graph: an assistant
+ * rewriting a pipeline keeps the entry, and a graph with nothing in common was
+ * not an edit of this one.
+ *
+ * `moved` carries how far each card went, so the move can be shown rather than
+ * jumped. `changed` is what a node SAYS, position deliberately excluded — a
+ * relayout moves everything and changes nothing.
+ */
+export function changeBetween(before, after) {
+  const added = [];
+  const changed = [];
+  const moved = new Map();
+  for (const [id, now] of after) {
+    const was = before.get(id);
+    if (!was) { added.push(id); continue; }
+    if (was.body !== now.body) changed.push(id);
+    if (was.x !== now.x || was.y !== now.y) {
+      moved.set(id, { dx: was.x - now.x, dy: was.y - now.y });
+    }
+  }
+  const removed = [...before.keys()].filter((id) => !after.has(id));
+  const shared = [...after.keys()].some((id) => before.has(id));
+  const fresh = before.size === 0 || !shared;
+  if (fresh) {
+    // A document is not "every node added". Saying it was would be true and
+    // useless, and it would light up the whole canvas the moment the editor
+    // opens — the mark means "somebody just touched this", and on a graph
+    // nobody has looked at yet there is no this.
+    return { added: [], removed: [], changed: [], moved: new Map(), fresh: true, touched: 0 };
+  }
+  return {
+    added,
+    removed,
+    changed,
+    moved,
+    fresh: false,
+    touched: added.length + removed.length + changed.length,
+  };
 }
 
 // ----------------------------------------------------------- normalization

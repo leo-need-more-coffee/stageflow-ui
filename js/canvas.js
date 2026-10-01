@@ -37,6 +37,10 @@ import { paintIcon } from "./icons.js";
 import { KINDS, StageKind, kindOf } from "./kinds.js";
 import { openMenu } from "./menu.js";
 import { computeRegions, regionBounds, skippedArea } from "./regions.js";
+
+/** How long a card stays marked as new or newly different. Long enough to look
+ * up from a chat window, short enough not to become part of the picture. */
+const MARKS_MS = 6000;
 import { canContinue, freePortIndex } from "./wiring.js";
 
 const SVG_NS = "http://www.w3.org/2000/svg";
@@ -247,6 +251,54 @@ export class CanvasView {
 
   #layout(node) {
     return nodeLayout(node, this.env.showData(), this.env);
+  }
+
+  #marksTimer = null;
+
+  /**
+   * Show a graph that has just been replaced as a CHANGE rather than a jump.
+   *
+   * Called after the render, when the cards are already where they belong: a
+   * card that moved is put back where it was with a transform and released on
+   * the next frame, so it travels to its new place instead of appearing there.
+   * That is the whole trick — no second layout, no measuring, because the
+   * distance is known from the graph itself.
+   *
+   * What is new or newly different is marked for a few seconds. On a graph
+   * somebody else just rewrote, "what did it touch" is the first question, and
+   * the answer is otherwise a diff nobody can run.
+   */
+  showChange(change) {
+    if (!change || (!change.moved?.size && !change.touched)) return;
+    clearTimeout(this.#marksTimer);
+
+    for (const [id, { dx, dy }] of change.moved ?? []) {
+      const card = this.#nodeElById(id);
+      if (!card || (!dx && !dy)) continue;
+      card.style.transform = `translate(${dx}px, ${dy}px)`;
+      card.classList.add("sf-node-gliding");
+    }
+    for (const id of change.added ?? []) this.#nodeElById(id)?.classList.add("sf-node-new");
+    for (const id of change.changed ?? []) this.#nodeElById(id)?.classList.add("sf-node-edited");
+
+    // released on the next frame: set and cleared in one go, the browser sees
+    // no change at all and nothing moves
+    requestAnimationFrame(() => {
+      for (const id of (change.moved ?? new Map()).keys()) {
+        const card = this.#nodeElById(id);
+        if (card) card.style.transform = "";
+      }
+    });
+
+    this.#marksTimer = setTimeout(() => this.#clearMarks(), MARKS_MS);
+  }
+
+  #clearMarks() {
+    for (const card of this.nodesEl.querySelectorAll(
+      ".sf-node-new, .sf-node-edited, .sf-node-gliding")) {
+      card.classList.remove("sf-node-new", "sf-node-edited", "sf-node-gliding");
+      card.style.transform = "";
+    }
   }
 
   /** A local attachment point -> world coordinates. */
