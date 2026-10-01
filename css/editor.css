@@ -1993,6 +1993,28 @@ button.sf-tag:hover { border-color: var(--accent); color: var(--ink); }
   border-color: var(--accent-soft);
   background: var(--accent-soft);
   color: var(--accent-bright);
+  /* an assistant's note is prose and prose has no length. It is cut here and
+     kept whole in the tooltip: a status bar says what state things are in, and
+     a paragraph in it pushes everything else off the line.
+
+     `inline-block` on purpose. The chips are `inline-flex`, and on a flex
+     container the text sits in anonymous items that `text-overflow` cannot
+     reach — the line was being cut off mid-word with no ellipsis to say so. */
+  display: inline-block;
+  vertical-align: middle;
+  max-width: 44ch;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  cursor: help;
+}
+
+/* the figures never clip: they are short by construction and they are what the
+   eye goes to */
+.sf-status-diff {
+  font-variant-numeric: tabular-nums;
+  letter-spacing: 0.02em;
+  cursor: help;
 }
 
 /* ------------------------------------------------------------- modals */

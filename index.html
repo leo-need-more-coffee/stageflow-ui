@@ -69,9 +69,8 @@
       onState: (state, detail) => {
         const said = {
           connecting: () => [t("bridge.connecting"), t("bridge.about"), null],
-          live: () => [[detail ? t("bridge.did", { note: detail }) : t("bridge.live"),
-                        counts()].filter(Boolean).join(" · "),
-                       [t("bridge.about"), t("bridge.counts")].join("\n\n"), null],
+          live: () => [detail ? t("bridge.did", { note: detail }) : t("bridge.live"),
+                       [detail, t("bridge.about")].filter(Boolean).join("\n\n"), null],
           // the agent's process comes and goes with its session, so a lost
           // bridge is a thing to try again rather than a thing to report
           lost: () => [t("bridge.lost"),
@@ -81,6 +80,11 @@
         }[state];
         const [text, title, act] = said ? said() : ["", "", null];
         window.editor.setStatusNote("bridge", text, title, act);
+        // the count is its own chip: an assistant's sentence can be any length
+        // and gets clipped, and clipping is the one thing the figures must not
+        // suffer — they are the half you read at a glance
+        window.editor.setStatusNote("diff", state === "live" ? counts() : "",
+                                    t("bridge.counts"));
       },
     }).then((bridge) => { if (bridge) window.bridge = bridge; });
   </script>

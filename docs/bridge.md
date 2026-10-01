@@ -92,13 +92,15 @@ the graph.
 **What was touched is marked** — green for a node that is new, amber for one
 that now says something different, the two oldest colours there are for a diff.
 A change from the bridge keeps its marks until it is answered for; anything
-else fades after a few seconds. Position is deliberately not a change: a relayout moves
-everything and alters nothing. The status bar carries the count beside the
-agent's own note:
+else fades after a few seconds.
 
-    AI: added a branch · +2 ✎2
+**The status bar keeps to one line.** The agent's note is prose and prose has
+no length — it is cut to fit and kept whole in the tooltip. The figures are a
+chip of their own and are never cut: they are the half you read at a glance,
+and a sentence growing past them would push them off the bar.
 
-Nothing is marked when the editor opens, however much is on the canvas. The
+    AI: a second pipeline: map over the titles → subpipe…   +5 −14 ✎2   ✓ keep   ↩ put back Position is deliberately not a change: a relayout moves
+everything and alters nothing. Nothing is marked when the editor opens, however much is on the canvas. The
 mark means "somebody just touched this", and on a graph nobody has looked at
 yet there is no this.
 
