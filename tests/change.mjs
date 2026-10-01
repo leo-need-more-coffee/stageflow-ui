@@ -101,6 +101,62 @@ const graph = (...nodes) => ({ nodes: [{ id: "start", type: "entry", next: nodes
     "and the graph itself is the same");
 }
 
+{ // a graph arriving without coordinates keeps the ones the cards already have
+  //
+  // An assistant is told not to invent coordinates, so an edit arrives with
+  // none at all. Laying the result out would move every card the person had
+  // dragged because two more nodes appeared — they asked for two more cards,
+  // not for a new arrangement.
+  const model = new PipelineModel();
+  loading(model, graph(at("a", 700, 400), at("b", 900, 650)));
+  const where = (id) => {
+    const n = model.graph.nodes.find((x) => x.id === id);
+    return `${n.metadata.ui.x},${n.metadata.ui.y}`;
+  };
+  const kept = { a: where("a"), b: where("b"), start: where("start") };
+
+  // the same graph plus one node, written out with no placement anywhere
+  loading(model, { nodes: [
+    { id: "start", type: "entry", next: "a" },
+    { id: "a", type: "stage", stage: "Step", next: "c" },
+    { id: "c", type: "stage", stage: "Step", next: "b" },
+    { id: "b", type: "stage", stage: "Step" },
+  ]});
+
+  check(where("a") === kept.a, `the card that stayed did not move (${where("a")} vs ${kept.a})`);
+  check(where("b") === kept.b, "and neither did the other one");
+  check(where("start") === kept.start, "nor the entry");
+  const added = model.graph.nodes.find((n) => n.id === "c");
+  check(Boolean(added.metadata.ui), "the new node was given a place");
+  check(added.metadata.ui.y > model.graph.nodes.find((n) => n.id === "a").metadata.ui.y,
+    "under whoever leads to it, which is where an insertion by hand goes");
+}
+
+{ // a chain of new nodes is placed in order, each under the last
+  const model = new PipelineModel();
+  loading(model, graph(at("a", 300, 300)));
+  loading(model, { nodes: [
+    { id: "start", type: "entry", next: "a" },
+    { id: "a", type: "stage", stage: "Step", next: "x" },
+    { id: "x", type: "stage", stage: "Step", next: "y" },
+    { id: "y", type: "stage", stage: "Step" },
+  ]});
+  const at_ = (id) => model.graph.nodes.find((n) => n.id === id).metadata.ui;
+  check(at_("x").y > at_("a").y && at_("y").y > at_("x").y,
+    "a new node whose predecessor is also new waits for it");
+}
+
+{ // a graph nobody has arranged is still laid out whole
+  const model = new PipelineModel();
+  const change = loading(model, { nodes: [
+    { id: "start", type: "entry", next: "a" },
+    { id: "a", type: "stage", stage: "Step" },
+  ]});
+  check(change.fresh, "the first graph is a document");
+  const ys = model.graph.nodes.map((n) => n.metadata.ui.y);
+  check(new Set(ys).size === ys.length, "and it got a real layout, not a pile");
+}
+
 if (failed) {
   console.error(`change: ${failed} of ${checked} checks failed`);
   process.exit(1);

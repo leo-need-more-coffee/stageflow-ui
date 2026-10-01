@@ -126,7 +126,9 @@ export class PipelineModel extends EventTarget {
    */
   setPipeline(data, { keepLayout = false } = {}) {
     const before = snapshotNodes(this.graph);
-    this.#pipeline = normalizePipeline(structuredClone(data), this.spacing, keepLayout);
+    const incoming = structuredClone(data);
+    inheritPlacement(this.#pipeline, incoming);
+    this.#pipeline = normalizePipeline(incoming, this.spacing, keepLayout);
     this.#graphKey = null;
     // another document — another history: there is no undoing into a foreign
     // pipeline
@@ -398,6 +400,32 @@ export class PipelineModel extends EventTarget {
   }
 }
 
+/**
+ * Where the cards already are, carried onto the graph replacing them.
+ *
+ * A graph written somewhere else has no coordinates — an assistant is told not
+ * to invent them, because nothing out there knows how wide a card is. Without
+ * this, a node that is simply still there would be laid out again, and every
+ * card the person had dragged would move because two more nodes appeared.
+ *
+ * By id, and only where the arriving node brought nothing of its own: a graph
+ * that does carry a placement meant it.
+ */
+function inheritPlacement(from, to) {
+  const carry = (older, newer) => {
+    const was = new Map((older?.nodes ?? []).map((n) => [n.id, n.metadata?.ui]));
+    for (const node of newer?.nodes ?? []) {
+      const ui = was.get(node.id);
+      if (!ui || node.metadata?.ui) continue;
+      node.metadata = { ...(node.metadata ?? {}), ui: { ...ui } };
+    }
+  };
+  carry(from, to);
+  for (const [key, graph] of Object.entries(to?.subpipelines ?? {})) {
+    carry(from?.subpipelines?.[key], graph);
+  }
+}
+
 // ------------------------------------------------------------------ change
 
 /** Each node as "where it is" and "what it says", by id. */
@@ -477,6 +505,53 @@ function normalizePipeline(data, spacing, keepLayout = false) {
 }
 
 /**
+ * Give coordinates to the nodes that have none, leaving everyone else alone.
+ *
+ * The whole-graph layout is right for a graph nobody has arranged and wrong
+ * for one somebody is working on: an assistant that adds two nodes writes no
+ * coordinates at all, and relaying out the result moves every card the person
+ * had dragged. What they asked for was two more cards, not a new arrangement.
+ *
+ * A new node is put under whoever leads to it — the same placement an insertion
+ * by hand gets — and steps aside from anything already there. Nodes are taken
+ * in passes, because a new node whose predecessor is also new has to wait for
+ * it; what is left over after a pass that placed nothing goes below everything,
+ * which is where a chain that leads from nowhere belongs.
+ */
+function placeNewNodes(graph, spacing) {
+  const leadsTo = new Map();
+  for (const node of graph.nodes) {
+    for (const port of kindOf(node).orderPorts(node)) {
+      const target = port.get?.();
+      if (target && !leadsTo.has(target)) leadsTo.set(target, node.id);
+    }
+  }
+  const placed = (id) => Boolean(graph.nodes.find((n) => n.id === id)?.metadata?.ui);
+  let waiting = graph.nodes.filter((n) => !n.metadata?.ui);
+
+  while (waiting.length) {
+    const next = [];
+    for (const node of waiting) {
+      const from = leadsTo.get(node.id);
+      if (from && placed(from)) placeAfter(graph, from, node, spacing);
+      else next.push(node);
+    }
+    if (next.length === waiting.length) break; // nothing moved: no parent to hang on
+    waiting = next;
+  }
+
+  // whatever is left starts its own column under the rest of the graph
+  let y = Math.max(60, ...graph.nodes
+    .filter((n) => n.metadata?.ui)
+    .map((n) => n.metadata.ui.y + nodeLayout(n).height));
+  for (const node of waiting) {
+    node.metadata.ui = { x: 60, y: Math.round(y + (spacing.gapY ?? DEFAULT_SPACING.gapY)) };
+    avoidOverlap(graph, node);
+    y = node.metadata.ui.y + nodeLayout(node).height;
+  }
+}
+
+/**
  * Whether the coordinates in a graph place the cards on top of one another.
  *
  * Coordinates that do are not a layout: nobody arranged this and looked at it.
@@ -488,10 +563,15 @@ function normalizePipeline(data, spacing, keepLayout = false) {
  * question the layout would have answered: would it have left them apart.
  */
 function cardsCollide(graph) {
-  const boxes = graph.nodes.map((node) => {
-    const { width, height } = nodeLayout(node);
-    return { x: node.metadata?.ui?.x ?? 0, y: node.metadata?.ui?.y ?? 0, width, height };
-  });
+  // only the cards that are somewhere. A node with no coordinates is not at
+  // the origin, it is unplaced — counting it as (0, 0) made every graph with
+  // one new node in it look like a pile, and relaid out the whole thing
+  const boxes = graph.nodes
+    .filter((node) => node.metadata?.ui)
+    .map((node) => {
+      const { width, height } = nodeLayout(node);
+      return { x: node.metadata.ui.x, y: node.metadata.ui.y, width, height };
+    });
   for (let i = 0; i < boxes.length; i += 1) {
     for (let j = i + 1; j < boxes.length; j += 1) {
       const a = boxes[i];
@@ -530,8 +610,16 @@ function normalizeGraph(graph, spacing, keepLayout = false) {
     if (!node.metadata.ui) needsLayout = true;
   }
   // a graph from outside may carry coordinates that are not a layout at all
-  if (!needsLayout && !keepLayout && cardsCollide(graph)) needsLayout = true;
-  if (needsLayout) autoLayout(graph, spacing);
+  const collide = !keepLayout && cardsCollide(graph);
+  const arranged = graph.nodes.filter((n) => n.metadata.ui).length;
+  if (collide || (needsLayout && !arranged)) {
+    // nothing to preserve, or what there is cannot be trusted
+    autoLayout(graph, spacing);
+  } else if (needsLayout) {
+    // some of it is arranged and some of it is new: only the new part is ours
+    // to place, and the rest is where somebody put it
+    placeNewNodes(graph, spacing);
+  }
 }
 
 /**
