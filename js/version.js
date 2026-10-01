@@ -8,4 +8,4 @@
  * on the connection screen is confusing in exactly the situation the number
  * exists for.
  */
-export const VERSION = "0.6.5";
+export const VERSION = "0.6.6";
