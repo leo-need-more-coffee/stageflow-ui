@@ -83,34 +83,37 @@
   --shadow-pop: var(--shadow-lg);
 }
 
-html, body, #root {
-  height: 100%;
-}
+/* in the base layer, so a utility class on an element can override them */
+@layer base {
+  html, body, #root {
+    height: 100%;
+  }
 
-body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--fg);
-  font-family: var(--font-sans);
-  font-size: 13px;
-  line-height: 1.45;
-  -webkit-font-smoothing: antialiased;
-  font-feature-settings: "cv11", "ss01";
-}
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    line-height: 1.45;
+    -webkit-font-smoothing: antialiased;
+    font-feature-settings: "cv11", "ss01";
+  }
 
-*:focus-visible {
-  outline: 2px solid var(--ring);
-  outline-offset: 1px;
-}
+  *:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 1px;
+  }
 
-::selection {
-  background: var(--accent-soft);
-}
+  ::selection {
+    background: var(--accent-soft);
+  }
 
-/* thin scrollbars that do not shout */
-* {
-  scrollbar-width: thin;
-  scrollbar-color: var(--border-strong) transparent;
+  /* thin scrollbars that do not shout */
+  * {
+    scrollbar-width: thin;
+    scrollbar-color: var(--border-strong) transparent;
+  }
 }
 
 /* ------------------------------------------------------------ React Flow */

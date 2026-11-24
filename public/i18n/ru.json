@@ -525,7 +525,7 @@
   "app.add.cannotInsert": "Этому узлу некуда продолжать, в связь его не вставить",
   "app.add.kinds": "Узлы",
   "app.add.nothing": "Ничего не нашлось",
-  "app.add.search": "Узел или стадия…",
+  "app.add.search": "Имя, часть имени, аргумент, описание…",
   "app.add.tip": "Добавить узел после выделенного",
   "app.answer.deadline": "Если до {time} ничего не придёт, пойдёт в on_timeout",
   "app.answer.empty": "пусто — не отправится",
@@ -602,5 +602,13 @@
   "app.vars.noReader": "никто не читает",
   "app.vars.noWriter": "никто не пишет",
   "app.vars.tip": "Переменные",
-  "app.vars.title": "Переменные"
+  "app.vars.title": "Переменные",
+
+  "app.add.count": "{shown} из {total}",
+  "app.add.all": "Всё",
+  "app.add.recent": "Недавние",
+  "app.add.noRecent": "Пока ничего не использовали",
+  "app.add.keysMove": "выбор",
+  "app.add.keysPick": "добавить",
+  "app.add.keysClose": "закрыть"
 }

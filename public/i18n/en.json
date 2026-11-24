@@ -525,7 +525,7 @@
   "app.add.cannotInsert": "This node has nowhere to continue, so it cannot go into an edge",
   "app.add.kinds": "Nodes",
   "app.add.nothing": "Nothing found",
-  "app.add.search": "Search nodes and stages…",
+  "app.add.search": "Name, a word of it, an argument, a description…",
   "app.add.tip": "Add a node after the selected one",
   "app.answer.deadline": "If nothing comes by {time}, it takes on_timeout",
   "app.answer.empty": "empty — not sent",
@@ -602,5 +602,13 @@
   "app.vars.noReader": "nobody reads",
   "app.vars.noWriter": "nobody writes",
   "app.vars.tip": "Variables",
-  "app.vars.title": "Variables"
+  "app.vars.title": "Variables",
+
+  "app.add.count": "{shown} of {total}",
+  "app.add.all": "Everything",
+  "app.add.recent": "Recent",
+  "app.add.noRecent": "Nothing used yet",
+  "app.add.keysMove": "move",
+  "app.add.keysPick": "add",
+  "app.add.keysClose": "close"
 }

@@ -45,7 +45,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
     <D.Root open={open} onOpenChange={(o) => (o ? onOpenChange(true) : close())}>
       <D.Portal>
         <D.Overlay className="fixed inset-0 z-50 bg-black/25" />
-        <D.Content className="fixed left-1/2 top-[14vh] z-50 w-[min(600px,calc(100vw-32px))] -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-surface shadow-pop outline-none">
+        <D.Content className={cn("fixed left-1/2 top-[14vh] z-50 -translate-x-1/2 overflow-hidden rounded-xl border border-border bg-surface shadow-pop outline-none", page === "add" ? "w-[min(760px,calc(100vw-32px))]" : "w-[min(600px,calc(100vw-32px))]")}>
           <D.Title className="sr-only">{t("app.cmd.title")}</D.Title>
           <D.Description className="sr-only">{t("app.cmd.placeholder")}</D.Description>
           {page === "add"
