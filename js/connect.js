@@ -37,8 +37,36 @@ function el(tag, className, text) {
 }
 
 /**
- * What was remembered about the last backend that answered: the address, the
- * credential and which plan was being looked at.
+ * The credentials, by the address of the backend each one was given for.
+ *
+ * Kept per address rather than one for the editor, and that is the point: a
+ * token typed for one backend is sent to that backend and to no other. With a
+ * single remembered credential, a link with `?backend=` pointing somewhere
+ * else made the editor present the token there on load, before anybody had
+ * clicked anything. A remembered credential from before (one `auth` beside
+ * the `url`) is read as belonging to that url, which is where it was used.
+ */
+function credentialsOf(saved) {
+  const out = {};
+  const put = (url, auth) => {
+    const address = normalizeBackendUrl(url ?? "");
+    if (!address || typeof auth?.value !== "string" || !auth.value) return;
+    out[address] = {
+      header: typeof auth.header === "string" && auth.header.trim()
+        ? auth.header.trim() : DEFAULT_AUTH_HEADER,
+      value: auth.value,
+    };
+  };
+  if (saved.auth) put(saved.url, saved.auth);
+  for (const [url, auth] of Object.entries(saved.credentials ?? {})) put(url, auth);
+  return out;
+}
+
+/**
+ * What was remembered: the address of the last backend that answered, which
+ * plan was being looked at, and the credential for `url` — the given one, or
+ * that last address when none is given. Only ever the credential that
+ * belongs to the address asked about.
  *
  * The credential goes into `localStorage` beside the editor's other secrets
  * and with the same caveat as those (see `secrets.js`): it is not encryption,
@@ -46,15 +74,13 @@ function el(tag, className, text) {
  * screenshots, not against someone at the keyboard. The alternative — asking
  * for it on every reload — is what makes people paste tokens into the graph.
  */
-export function storedBackend(storageKey) {
+export function storedBackend(storageKey, url = undefined) {
   const saved = readJson(backendStorageKey(storageKey)) ?? {};
+  const last = normalizeBackendUrl(saved.url ?? "");
+  const address = url === undefined ? last : normalizeBackendUrl(url ?? "");
   return {
-    url: normalizeBackendUrl(saved.url ?? ""),
-    auth: {
-      header: typeof saved.auth?.header === "string" && saved.auth.header.trim()
-        ? saved.auth.header.trim() : DEFAULT_AUTH_HEADER,
-      value: typeof saved.auth?.value === "string" ? saved.auth.value : "",
-    },
+    url: last,
+    auth: credentialsOf(saved)[address] ?? { header: DEFAULT_AUTH_HEADER, value: "" },
     plan: typeof saved.plan === "string" && saved.plan ? saved.plan : null,
   };
 }
@@ -62,7 +88,16 @@ export function storedBackend(storageKey) {
 /** What the editor remembers about a backend; one writer, one shape. */
 export function rememberBackend(storageKey, { url, auth, plan }) {
   const key = backendStorageKey(storageKey);
-  if (key) writeJson(key, { url, auth, plan: plan ?? null });
+  if (!key) return;
+  const saved = readJson(key) ?? {};
+  const credentials = credentialsOf(saved);
+  const address = normalizeBackendUrl(url ?? "");
+  if (address) {
+    if (auth?.value) credentials[address] = { header: auth.header || DEFAULT_AUTH_HEADER,
+                                              value: auth.value };
+    else delete credentials[address];
+  }
+  writeJson(key, { url: address, credentials, plan: plan ?? null });
 }
 
 /**
@@ -85,6 +120,9 @@ export function connectBackend({
   const remembered = storedBackend(storageKey);
   const first = normalizeBackendUrl(url ?? "") || (force ? "" : remembered.url);
   const shownPlan = plan ?? remembered.plan;
+  // the credential of the address about to be tried — never another one's
+  const credentialFor = (address) => storedBackend(storageKey, address).auth;
+  const initial = credentialFor(first || remembered.url);
 
   return new Promise((resolve) => {
     const overlay = el("div", "sf-connect-overlay");
@@ -116,10 +154,10 @@ export function connectBackend({
     // working is visible where it is corrected rather than hidden behind a
     // triangle.
     const auth = el("details", "sf-connect-auth");
-    auth.open = Boolean(remembered.auth.value);
+    auth.open = Boolean(initial.value);
     const summary = el("summary", "", t("conn.auth"));
     summary.append(el("span", "sf-connect-auth-hint",
-      t(remembered.auth.value ? "connect.auth.set" : "connect.auth.optional")));
+      t(initial.value ? "connect.auth.set" : "connect.auth.optional")));
     auth.append(summary);
 
     const authRow = el("div", "sf-connect-auth-row");
@@ -129,7 +167,7 @@ export function connectBackend({
     headerInput.spellcheck = false;
     headerInput.autocomplete = "off";
     headerInput.placeholder = DEFAULT_AUTH_HEADER;
-    headerInput.value = remembered.auth.header;
+    headerInput.value = initial.header;
     const valueInput = el("input", "sf-connect-input");
     // a password field so that a token is not on screen in a demonstration;
     // pasting into one works, and reading it back is not what it is for
@@ -138,7 +176,7 @@ export function connectBackend({
     valueInput.spellcheck = false;
     valueInput.autocomplete = "off";
     valueInput.placeholder = "Bearer …";
-    valueInput.value = remembered.auth.value;
+    valueInput.value = initial.value;
     authRow.append(headerInput, valueInput);
     auth.append(authRow);
     auth.append(el("p", "sf-connect-auth-note", t("connect.auth.note")));
@@ -230,6 +268,18 @@ export function connectBackend({
       e.preventDefault();
       attempt(input.value);
     };
+
+    // a different address means a different credential: what is in the
+    // fields follows the address until somebody types into them
+    let typedCredential = false;
+    headerInput.addEventListener("input", () => { typedCredential = true; });
+    valueInput.addEventListener("input", () => { typedCredential = true; });
+    input.addEventListener("input", () => {
+      if (typedCredential) return;
+      const known = credentialFor(input.value);
+      headerInput.value = known.header;
+      valueInput.value = known.value;
+    });
 
     if (first) attempt(first, { silent: true });
     else input.focus();

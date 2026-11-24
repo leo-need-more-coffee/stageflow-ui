@@ -44,8 +44,12 @@ broken rather than as unconfigured.
   credential that is wrong is wrong here, on the screen where it can be
   corrected, rather than at the first run. The editor authenticates nothing
   itself: it carries what it is given and reports what came back. The value is
-  remembered next to the address, with the same caveat as the
-  [secret store](secrets.md) — it is not encryption.
+  remembered **per address**, with the same caveat as the
+  [secret store](secrets.md) — it is not encryption. A credential is sent
+  to the backend it was typed for and to no other: a link whose `?backend=`
+  names a different address opens with the credential fields empty, rather
+  than presenting a token remembered for somewhere else to whoever the link
+  points at.
 - `?plan=basic` opens the editor drawn against that plan of that backend.
 
 ## The connection dialog

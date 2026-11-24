@@ -20,7 +20,8 @@
  * The public API: getPipeline / setPipeline / setStages / validate, and the
  * "change" event (Editor is an EventTarget). Everything else is internals.
  */
-import { Backend, backendStorageKey } from "./backend.js";
+import { Backend } from "./backend.js";
+import { rememberBackend } from "./connect.js";
 import { CanvasView } from "./canvas.js";
 import { NODE_MIN_W } from "./geometry.js";
 import { t, tn } from "./i18n.js";
@@ -35,7 +36,7 @@ import { SecretStore } from "./secrets.js";
 import { BackendCapabilities } from "./capabilities.js";
 import { VERSION } from "./version.js";
 import { StagesLibrary, Validator } from "./stages.js";
-import { EditorStore, readJson, writeJson } from "./storage.js";
+import { EditorStore } from "./storage.js";
 import { Toolbar } from "./toolbar.js";
 
 function el(tag, className) {
@@ -365,10 +366,8 @@ export class Editor extends EventTarget {
   #persistBackend() {
     const key = this.options.storageKey;
     if (!key) return;
-    const saved = readJson(backendStorageKey(key)) ?? {};
-    writeJson(backendStorageKey(key), { ...saved, url: this.backend.url,
-                                        auth: this.backend.auth,
-                                        plan: this.backend.plan });
+    rememberBackend(key, { url: this.backend.url, auth: this.backend.auth,
+                           plan: this.backend.plan });
   }
 
   /**
