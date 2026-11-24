@@ -95,10 +95,14 @@ GET    /api/run/<id>           the state of the run
 GET    /api/run/<id>/events    the event stream (SSE), ?from=N — read on from the Nth
 POST   /api/run/<id>/control   {action: "step"|"resume"|"pause"|"stop"|"delay", count, delay}
 POST   /api/run/<id>/vars      {set: {...}, drop: [...]}
+POST   /api/run/<id>/input     {type, payload} — answer a run waiting at a `wait` node
 ```
 
 The run API is described in [Running and debugging](running.md), the secret
 part in [Secrets](secrets.md).
+
+`/input` is only needed by a backend that runs pipelines with `wait` nodes;
+see [Running and debugging](running.md#a-run-that-waits).
 
 Only `/api/stages` is required to get in. A backend without `/api/secrets` is
 fine — the editor simply shows no environment keys (the request failing is not

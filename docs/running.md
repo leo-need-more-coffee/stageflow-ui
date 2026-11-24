@@ -84,9 +84,11 @@ GET    /api/run/<id>           the state of the run
 GET    /api/run/<id>/events    the event stream (SSE), ?from=N — read on from the Nth
 POST   /api/run/<id>/control   {action: "step"|"resume"|"pause"|"stop"|"delay", count, delay}
 POST   /api/run/<id>/vars      {set: {...}, drop: [...]}
+POST   /api/run/<id>/input     {type, payload}
 ```
 
 The events of the stream: `node_enter` / `node_exit` with the frame, `paused`,
+`waiting`,
 the session telemetry (`stage_started`, `stage_failed`, `condition_evaluated`,
 …), `var_set` / `var_rejected`, and at the end `finished` with the result and
 the artifacts, or `failed`. Every event has an `index`, so an interrupted
@@ -97,6 +99,40 @@ an event, and "the node started" must appear on the graph when it happened. The
 commands go as ordinary POSTs: they are initiated by the user, and their answer
 is not needed before the event.
 
+## A run that waits
+
+A `wait` node stops a run until somebody answers it — an agent approving a
+draft, a customer replying — which may be minutes or days. A backend that
+saves such runs (the [example](https://github.com/leo-need-more-coffee/stageflow-example)
+does, in SQLite) ends the stream with an event
+
+```json
+{"type": "waiting", "node": "review", "input": "review", "deadline": 1767225600}
+```
+
+and the run's status becomes `waiting`. The editor shows it as **⏳ waits for
+an answer**: the node, when the deadline passes (`on_timeout` is taken then),
+and a box for the answer, prefilled with the fields the wait node reads from
+it (its `outputs`):
+
+```json
+{ "verdict": "", "text": "" }
+```
+
+**Answer** sends it as `POST /api/run/<id>/input {type, payload}`. The run goes
+on on the backend, and the editor reads the same event log from where it left
+off (`?from=N`), so the debug log continues rather than starting over. A
+backend that refuses — the run is not waiting any more, or waits for another
+input — answers `409`, and the message is shown next to the button.
+
+While a run waits nothing executes: stepping and pausing mean nothing, and
+the frame is read-only. Stop still works, and ends the saved run too.
+
+On the canvas a `wait` card has a second, dashed port, `on_timeout`, as soon
+as it has a timeout; the editor checks what the core checks — a timeout needs
+`on_timeout`, and a wait cannot stand inside a `try`, `map` or `parallel`
+block or in a subpipeline, because a saved run comes back to a node of the
+main graph.
 
 ## What a run cost
 

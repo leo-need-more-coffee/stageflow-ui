@@ -1393,3 +1393,129 @@ export const MapKind = register(class MapKind extends NodeKind {
     return issues;
   }
 });
+
+// -------------------------------------------------------------------- wait
+
+/** A duration as the core reads it: seconds, or a number with s, m, h or d. */
+const DURATION = /^\s*\d+(\.\d+)?\s*[smhd]\s*$/;
+
+export function isDuration(value) {
+  if (typeof value === "number") return value > 0;
+  return typeof value === "string" && (DURATION.test(value) || Number(value) > 0);
+}
+
+export const WaitKind = register(class WaitKind extends NodeKind {
+  static type = "wait";
+  static get title() { return t("kind.wait"); }
+  static color = "#5cc6c6";
+  static glyph = "⏸";
+
+  static description() { return t("kind.wait.about"); }
+
+  static defaults(id) { return { id, type: "wait", input: "", next: null }; }
+
+  static subtitle(node) {
+    if (!node.input) return t("kind.wait.empty");
+    return node.timeout != null
+      ? t("kind.wait.forUpTo", { input: node.input, timeout: node.timeout })
+      : t("kind.wait.for", { input: node.input });
+  }
+
+  static orderPorts(node) {
+    const ports = [{ key: "next", label: "next", get: () => node.next,
+                     set: (v) => { node.next = v; } }];
+    // the timeout road exists only with a timeout: without one the wait has
+    // nowhere else to go
+    if (node.timeout != null || node.on_timeout) {
+      ports.push({ key: "on_timeout", label: "on_timeout", dashed: true,
+                   get: () => node.on_timeout,
+                   set: (v) => { v ? node.on_timeout = v : delete node.on_timeout; } });
+    }
+    return ports;
+  }
+
+  static dataIns(node) {
+    // a computed output reads the frame, as on a stage
+    const ins = [];
+    for (const row of outputRows(node)) {
+      if (!row.cel) continue;
+      const refs = celRefs(row.src);
+      if (refs.length) {
+        ins.push({ label: `${row.dest} ← ƒ(${refs.map((r) => r.name).join(",")})`, refs });
+      }
+    }
+    return [...ins, ...super.dataIns(node)];
+  }
+
+  static dataOuts(node) {
+    const outs = outputRows(node).map((row) => ({
+      label: `${row.cel ? "ƒ" : row.src} → ${row.dest}`,
+      variable: { name: row.dest },
+    }));
+    return [...outs, ...super.dataOuts(node)];
+  }
+
+  static fields(node) {
+    return [
+      { kind: "text", group: "main", label: t("field.waitInput"),
+        get: () => node.input ?? "", placeholder: "approval",
+        set: (v) => { node.input = (v ?? "").trim(); } },
+      { kind: "text", group: "main", label: t("field.waitTimeout"),
+        get: () => node.timeout ?? "", placeholder: t("field.waitTimeout.none"),
+        set: (v) => {
+          const text = (v ?? "").trim();
+          if (!text) { delete node.timeout; return; }
+          node.timeout = /^\d+(\.\d+)?$/.test(text) ? Number(text) : text;
+        } },
+      { kind: "rows", group: "out", label: t("field.waitOutputs"),
+        columns: [
+          { key: "how", type: "select", width: "52px", title: t("field.waitOutputs.how"),
+            options: [["field", t("field.waitOutputs.field")], ["cel", "ƒ"]] },
+          { key: "src", type: "text", placeholder: t("field.waitOutputs.src"), width: "110px" },
+          { key: "arrow", type: "label", text: "→", width: "20px" },
+          { key: "dest", type: "text", placeholder: t("field.waitOutputs.dest") },
+        ],
+        get: () => outputRows(node).map((r) => ({ ...r, how: r.cel ? "cel" : "field" })),
+        set: (rows) => writeOutputRows(node, rows.map((r) => ({ ...r, cel: r.how === "cel" }))),
+        incomplete: (r) => !r.dest?.trim() || (r.how !== "cel" && !r.src?.trim()),
+        blank: () => ({ how: "field", src: "", dest: "" }) },
+      exposeFieldDesc(node),
+    ];
+  }
+
+  static validate(node, graph, pipeline, env) {
+    const issues = super.validate(node, graph, pipeline, env);
+    if (!node.input) issues.push(t("issue.waitNoInput"));
+    if (node.timeout != null && !isDuration(node.timeout)) {
+      issues.push(t("issue.waitBadTimeout", { value: String(node.timeout) }));
+    }
+    if ((node.timeout != null) !== Boolean(node.on_timeout)) {
+      issues.push(t("issue.waitTimeoutPair"));
+    }
+    for (const row of outputRows(node)) {
+      if (row.cel && !row.src) issues.push(t("issue.outNoExpr", { name: row.dest }));
+    }
+    issues.push(...this.#placementIssues(node, graph, pipeline));
+    issues.push(...refIssue(graph, node.next, "next"),
+                ...refIssue(graph, node.on_timeout, "on_timeout"));
+    return issues;
+  }
+
+  /** A saved run comes back at a node of the main graph, so the core refuses
+   * a wait inside a block or a subpipeline. Said here before the run. */
+  static #placementIssues(node, graph, pipeline) {
+    if (graph !== pipeline) return [t("issue.waitInSubpipeline")];
+    const issues = [];
+    for (const block of graph.nodes ?? []) {
+      const groups = kindOf(block).regionGroups(block);
+      if (!groups?.length) continue;
+      // a block's area: reachable from its entries before the node after it
+      const after = block.next ? reachableFrom(graph, [block.next]) : new Set();
+      const inside = groups.some((g) => reachableFrom(graph, g.entries ?? [], after).has(node.id));
+      if (inside && block.id !== node.id) {
+        issues.push(t("issue.waitInBlock", { type: block.type, block: block.id }));
+      }
+    }
+    return issues;
+  }
+});

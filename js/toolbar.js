@@ -292,7 +292,7 @@ export class Toolbar {
     const wrap = el("div", "sf-runstate");
     if (runner.status === "idle") return wrap;
     const glyphs = {
-      running: "▶", paused: "⏸", finished: "✓", stopped: "⏹", failed: "✕",
+      running: "▶", paused: "⏸", awaiting: "⏳", finished: "✓", stopped: "⏹", failed: "✕",
     };
     const glyph = glyphs[runner.status] ?? "•";
     const text = glyphs[runner.status] ? t(`status.${runner.status}`) : runner.status;

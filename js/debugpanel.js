@@ -12,7 +12,7 @@
  * variable value is being typed at that very moment.
  */
 import { t } from "./i18n.js";
-import { formatLiteral, parseLiteral } from "./kinds.js";
+import { formatLiteral, outputRows, parseLiteral } from "./kinds.js";
 import { SECRET_MASK } from "./secrets.js";
 
 function el(tag, className, text) {
@@ -25,6 +25,7 @@ function el(tag, className, text) {
 const STATUS = {
   running: { glyph: "▶", key: "status.running" },
   paused: { glyph: "⏸", key: "debug.paused" },
+  awaiting: { glyph: "⏳", key: "debug.awaiting" },
   finished: { glyph: "✓", key: "status.finished" },
   stopped: { glyph: "⏹", key: "status.stopped" },
   failed: { glyph: "✕", key: "status.failed" },
@@ -68,7 +69,10 @@ export class DebugPanel {
     this.streamBox.hidden = true;
 
     this.bodyEl.append(varsBox, this.streamBox, logBox);
-    this.host.append(this.headEl, this.bodyEl);
+    // the answer to a run saved at a `wait` node; built when the run waits
+    this.answerEl = el("div", "sf-debug-answer");
+    this.answerEl.hidden = true;
+    this.host.append(this.headEl, this.answerEl, this.bodyEl);
   }
 
   render() {
@@ -81,6 +85,7 @@ export class DebugPanel {
       return;
     }
     this.#renderHead();
+    this.#renderAnswer();
     this.#renderVars();
     this.#renderStream();
     this.#renderLog();
@@ -140,7 +145,10 @@ export class DebugPanel {
 
     this.headEl.append(el("div", "sf-spacer"));
 
-    if (runner.active) {
+    if (runner.awaitingInput) {
+      this.headEl.append(this.#button("⏹", t("debug.stop"), () => runner.stop(),
+                                      "sf-btn sf-btn-small sf-danger"));
+    } else if (runner.active) {
       this.headEl.append(
         runner.waiting
           ? this.#button("▶", t("debug.resume"), () => runner.resume())
@@ -216,11 +224,81 @@ export class DebugPanel {
     return wrap;
   }
 
+  // ---------------------------------------------------------------- answer
+
+  /**
+   * The answer to a waiting run: a JSON payload and a button. Prefilled with
+   * the fields the `wait` node reads from the answer (its `outputs`), so the
+   * person answering sees what is expected instead of an empty box. Built once
+   * per wait: a redraw on every event would throw away what is being typed.
+   */
+  #renderAnswer() {
+    const { runner } = this.env;
+    const wait = runner.awaiting;
+    this.answerEl.hidden = !wait;
+    const key = wait ? `${runner.runId}:${wait.node}:${wait.input}` : null;
+    if (!wait || this.answerEl.dataset.key === key) return;
+    this.answerEl.dataset.key = key;
+    this.answerEl.textContent = "";
+
+    const head = el("div", "sf-debug-answer-head");
+    head.append(el("span", "", t("debug.awaitingFor", { input: wait.input })));
+    if (wait.deadline) {
+      head.append(el("span", "sf-muted", t("debug.awaitingUntil", {
+        time: new Date(wait.deadline * 1000).toLocaleString(),
+      })));
+    }
+    const payload = el("textarea", "sf-debug-answer-payload");
+    payload.spellcheck = false;
+    payload.value = JSON.stringify(this.#answerTemplate(wait.node), null, 2);
+    payload.rows = Math.min(10, Math.max(3, payload.value.split("\n").length));
+    const error = el("span", "sf-debug-error");
+    const send = this.#button(t("debug.answer"), t("debug.answerHint", { input: wait.input }),
+      async () => {
+        let value;
+        try {
+          value = JSON.parse(payload.value || "{}");
+          if (value === null || typeof value !== "object" || Array.isArray(value)) {
+            throw new Error(t("debug.answerObject"));
+          }
+        } catch (err) {
+          error.textContent = err.message;
+          return;
+        }
+        error.textContent = "";
+        send.disabled = true;
+        try {
+          await runner.answer(value);
+        } catch (err) {
+          error.textContent = err.message;
+          send.disabled = false;
+        }
+      }, "sf-btn sf-btn-small sf-primary");
+    this.answerEl.append(head, payload, el("div", "sf-debug-answer-actions"));
+    this.answerEl.lastChild.append(send, error);
+  }
+
+  /** `{field: ""}` for every payload field the wait node reads. */
+  #answerTemplate(nodeId) {
+    const node = this.env.model?.pipeline?.nodes?.find((n) => n.id === nodeId);
+    const fields = {};
+    for (const row of node ? outputRows(node) : []) {
+      if (!row.cel) fields[row.src] = "";
+      // `output.text` in an expression is a field of the answer too
+      for (const match of row.cel ? row.src.matchAll(/output\.([^\W\d]\w*)/gu) : []) {
+        fields[match[1]] ??= "";
+      }
+    }
+    return fields;
+  }
+
   // ------------------------------------------------------------ variables
 
   #renderVars() {
     const { runner } = this.env;
-    const json = JSON.stringify(runner.vars);
+    // the status is part of it: the same frame is editable while the run goes
+    // and read-only once it has stopped or is waiting
+    const json = `${runner.active}:${JSON.stringify(runner.vars)}`;
     // do not touch the table while something is being typed into it: the events
     // come in a stream, and a redraw would throw the field out along with what
     // was typed

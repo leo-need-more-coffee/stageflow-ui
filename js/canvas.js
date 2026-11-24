@@ -99,6 +99,7 @@ function portColor(port, kindColor) {
   if (port.key === "then") return "var(--warn)";
   if (port.key === "else" || port.key === "default") return "var(--ink-soft)";
   if (port.key === "except") return "var(--danger)";
+  if (port.key === "on_timeout") return "var(--ink-soft)";
   return kindColor;
 }
 

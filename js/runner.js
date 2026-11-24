@@ -58,7 +58,9 @@ export function delayLabel(seconds) {
 }
 
 export class Runner extends EventTarget {
-  status = "idle";   // idle | running | paused | finished | stopped | failed
+  // idle | running | paused | awaiting | finished | stopped | failed
+  // `awaiting`: saved on the backend at a `wait` node until it is answered
+  status = "idle";
   meters = {};       // what this run has spent so far, by meter
   meterLimits = {};  // what it is allowed, for the meters that are limited
   runId = null;
@@ -74,6 +76,8 @@ export class Runner extends EventTarget {
   error = null;
   result = null;
   artifacts = null;
+  awaiting = null;   // while `awaiting`: {node, input, deadline}
+  nextEvent = 0;     // the first event not yet seen, where the stream resumes
 
   /** @param backend the `Backend` to run on — the run URL and the credential
    * come from it, and nothing here reaches for the global `fetch` */
@@ -86,6 +90,9 @@ export class Runner extends EventTarget {
   get active() { return this.status === "running" || this.status === "paused"; }
 
   get waiting() { return this.status === "paused"; }
+
+  /** Saved at a `wait` node: nothing runs until `answer`. */
+  get awaitingInput() { return this.status === "awaiting"; }
 
   /** The text the model is writing right now (or wrote last). */
   get streamText() { return this.streams.get(this.streamNode) ?? ""; }
@@ -101,7 +108,7 @@ export class Runner extends EventTarget {
     this.stopStream();
     Object.assign(this, {
       status: "running", node: null, vars: {}, visited: [], log: [],
-      meters: {}, meterLimits: {},
+      meters: {}, meterLimits: {}, awaiting: null, nextEvent: 0,
       error: null, result: null, artifacts: null, mode, delay,
       streams: new Map(), streamNode: null, streaming: false,
     });
@@ -138,7 +145,33 @@ export class Runner extends EventTarget {
 
   pause() { return this.#control({ action: "pause" }); }
 
-  stop() { return this.#control({ action: "stop" }); }
+  async stop() {
+    if (!this.awaitingInput) return this.#control({ action: "stop" });
+    // a run saved at a wait is stopped on the backend from the store; its
+    // last events come on the same log, from where this editor left it
+    const state = await this.#post(`/${this.runId}/control`, { action: "stop" });
+    this.#resumeListening();
+    return state;
+  }
+
+  /**
+   * Answer a run that waits at a `wait` node: `type` is the input it waits
+   * for, `payload` what the node's `outputs` read. The run goes on on the
+   * backend and its events continue in the same log.
+   */
+  async answer(payload, type = this.awaiting?.input) {
+    if (!this.runId || !this.awaitingInput) return null;
+    const state = await this.#post(`/${this.runId}/input`, { type, payload });
+    this.#resumeListening();
+    return state;
+  }
+
+  #resumeListening() {
+    this.status = "running";
+    this.awaiting = null;
+    this.#changed();
+    this.#listen(this.nextEvent);
+  }
 
   setDelay(seconds) {
     this.delay = Math.max(0, Number(seconds) || 0);
@@ -157,7 +190,7 @@ export class Runner extends EventTarget {
     this.stopStream();
     Object.assign(this, {
       status: "idle", runId: null, node: null, vars: {}, visited: [], log: [],
-      meters: {}, meterLimits: {},
+      meters: {}, meterLimits: {}, awaiting: null, nextEvent: 0,
       error: null, result: null, artifacts: null,
       streams: new Map(), streamNode: null, streaming: false,
     });
@@ -171,9 +204,10 @@ export class Runner extends EventTarget {
 
   // -------------------------------------------------------------- internals
 
-  #listen() {
+  #listen(from = 0) {
     this.stopStream();
     this.stream = new EventStream(`${this.base}/${this.runId}/events`, {
+      from,
       fetcher: (url, init) => this.backend.fetch(url, init),
       onEvent: (event) => this.#event(event),
       // the stream gave up reconnecting: the run may well be going on, but
@@ -189,6 +223,7 @@ export class Runner extends EventTarget {
   }
 
   #event(event) {
+    if (Number.isInteger(event.index)) this.nextEvent = event.index + 1;
     // A text stream is an EVENT CONTRACT, not knowledge about particular
     // stages: any event with the payload `{stream: true, text: "…"}` counts as
     // a chunk of text a node is writing right now. The name of the event does
@@ -244,6 +279,15 @@ export class Runner extends EventTarget {
         // the final bill does not arrive in the stream: the events say what
         // happened, the state says what it cost. One read at the end rather
         // than a number tacked onto every event
+        this.#refreshState();
+        break;
+      case "waiting":
+        // the backend saved the run and ended the stream; it goes on when
+        // somebody answers (`answer`), maybe days from now
+        this.status = "awaiting";
+        this.awaiting = { node: event.node, input: event.input, deadline: event.deadline ?? null };
+        this.node = event.node ?? this.node;
+        this.stopStream();
         this.#refreshState();
         break;
       case "failed":

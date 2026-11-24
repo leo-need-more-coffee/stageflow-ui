@@ -1375,6 +1375,32 @@ button:focus-visible, input:focus-visible, select:focus-visible, textarea:focus-
 .sf-debug-glyph { font-size: 11px; }
 .sf-debug-running { border-color: var(--accent); color: var(--accent); }
 .sf-debug-paused { border-color: var(--warn); color: var(--warn); }
+.sf-debug-awaiting { border-color: var(--warn); color: var(--warn); border-style: dashed; }
+
+/* the answer to a run saved at a wait node */
+.sf-debug-answer {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  margin: 8px 0 4px;
+  padding: 8px 10px;
+  border: 1px dashed var(--warn);
+  border-radius: var(--radius);
+}
+.sf-debug-answer-head { display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 12.5px; }
+.sf-debug-answer-payload {
+  padding: 6px 8px;
+  background: var(--well);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--ink-code);
+  font-family: var(--mono);
+  font-size: 12px;
+  resize: vertical;
+  min-height: 48px;
+}
+.sf-debug-answer-payload:focus { outline: none; border-color: var(--accent); }
+.sf-debug-answer-actions { display: flex; gap: 10px; align-items: center; }
 .sf-debug-finished { border-color: var(--ok); color: var(--ok); }
 .sf-debug-failed { border-color: var(--danger); color: var(--danger); }
 
