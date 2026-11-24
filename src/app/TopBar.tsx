@@ -14,7 +14,7 @@ import {
 import { delayLabel, DELAY_PRESETS } from "@/core/runner.js";
 import { has, locale, locales, setLocale, t, tn } from "@/core/i18n.js";
 import {
-  Badge, Button, cn, Menu, MenuContent, MenuItem, MenuLabel, MenuRadio, MenuSeparator, MenuSub, MenuTrigger,
+  Badge, Button, cn, Menu, MenuCheck, MenuContent, MenuItem, MenuLabel, MenuRadio, MenuSeparator, MenuSub, MenuTrigger,
   Popover, PopoverContent, PopoverTrigger, Tip,
 } from "@/ui/kit";
 
@@ -42,7 +42,8 @@ function GraphSwitcher({ editor }: { editor: Editor }) {
   const dialogs = useDialogs();
   const model = editor.model;
   const subs = Object.keys(model.pipeline.subpipelines ?? {});
-  const current = model.graphKey;
+  // what is shown: a subpipeline opened alone, or the main graph (with frames)
+  const current = editor.standalone ?? (editor.framed ? null : model.graphKey);
   return (
     <div className="flex items-center gap-1 text-[13px]">
       <button type="button" onClick={() => editor.openGraph(null)}
@@ -72,6 +73,7 @@ function GraphSwitcher({ editor }: { editor: Editor }) {
             </MenuItem>
           ))}
           <MenuSeparator />
+          <MenuCheck checked={editor.showSubgraphs} onCheckedChange={() => editor.toggleSubgraphs()}>{t("app.graph.beside")}</MenuCheck>
           <MenuItem icon={<Plus />} onSelect={() => dialogs.open("subpipeline")}>{t("app.graph.new")}</MenuItem>
           {current !== null
             ? (

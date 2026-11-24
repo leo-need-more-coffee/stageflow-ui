@@ -1,23 +1,24 @@
 /**
- * The canvas: the graph being edited, drawn by React Flow.
+ * The canvas: the graphs being edited, drawn by React Flow.
  *
- * The graph lives in the core model; this component draws it and turns
+ * The graphs live in the core model; this component draws them and turns
  * gestures into model edits. Positions are the one thing it holds itself,
  * and only while a card is being dragged: the drop writes them to the model,
  * so a drag is one undo step rather than a hundred.
+ *
+ * With subpipelines shown beside the main graph (see `scene.ts`), a click on
+ * a node in a frame makes that subpipeline the graph being edited, quietly:
+ * the inspector, undo, delete and paste all work on it as they would on a
+ * subpipeline opened on its own.
  */
 import {
   Background, BackgroundVariant, Controls, MiniMap, ReactFlow, ReactFlowProvider, useReactFlow,
-  type Edge, type FinalConnectionState, type Node, type NodeChangeset, type XYPosition,
+  type FinalConnectionState, type Node, type NodeChangeset, type XYPosition,
 } from "@xyflow/react";
 import { Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
 
-import { varColor } from "@/core/colors.js";
-import { dataLinks } from "@/core/dataflow.js";
-import { nodeLayout } from "@/core/geometry.js";
 import { t } from "@/core/i18n.js";
-import { computeRegions, regionBounds } from "@/core/regions.js";
 import {
   Button, ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
   Kbd, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, Tip,
@@ -25,64 +26,18 @@ import {
 
 import { AddNodeMenu, type NodeSpec } from "../AddNodeMenu";
 import { useEditor } from "../context";
-import type { Editor } from "../editor";
-import { DataEdgeView, EdgeDefs, OrderEdgeView } from "./edges";
-import { NodeCard, RegionFrame, type CardData, type CardNode, type RunMark } from "./NodeCard";
+import { DataEdgeView, EdgeDefs, OrderEdgeView, SubrefEdgeView } from "./edges";
+import { NodeCard, RegionFrame, SubgraphFrame } from "./NodeCard";
+import { buildEdges, buildNodes, FRAME_HEAD, FRAME_PAD, fid, parseFid, shownGraphs, toGraph, type Shown } from "./scene";
 
-const nodeTypes = { card: NodeCard, region: RegionFrame };
-const edgeTypes = { order: OrderEdgeView, data: DataEdgeView };
+const nodeTypes = { card: NodeCard, region: RegionFrame, frame: SubgraphFrame };
+const edgeTypes = { order: OrderEdgeView, data: DataEdgeView, subref: SubrefEdgeView };
 
 /** Where the add menu is open, and what the picked node will be attached to. */
 type AddAt =
-  | { screen: XYPosition; flow: XYPosition; mode: "free" }
-  | { screen: XYPosition; flow: XYPosition; mode: "connect"; from: string; portIndex: number }
-  | { screen: XYPosition; flow: XYPosition; mode: "insert"; from: string; portIndex: number };
-
-function runMark(editor: Editor, id: string): RunMark {
-  const runner = editor.runner;
-  if (runner.status === "idle") return null;
-  if (runner.node === id) {
-    if (runner.status === "failed") return "failed";
-    if (runner.status === "awaiting") return "awaiting";
-    if (runner.status === "paused") return "paused";
-    if (runner.status === "running") return "current";
-  }
-  return runner.visited.includes(id) ? "visited" : null;
-}
-
-function buildCards(editor: Editor, dragged: Map<string, XYPosition>, rev: number): CardNode[] {
-  const graph = editor.model.graph;
-  const env = { stages: editor.stages, backend: editor.backend, showDescriptions: () => editor.showDescriptions };
-  const issuesByNode = new Map<string, string[]>();
-  for (const issue of editor.issues) {
-    if (issue.graph !== editor.model.graphKey || !issue.node) continue;
-    issuesByNode.set(issue.node, [...(issuesByNode.get(issue.node) ?? []), issue.message]);
-  }
-  const marks = editor.marks && editor.marks.until > Date.now() ? editor.marks.ids : null;
-  const running = editor.runner.status !== "idle";
-  return graph.nodes.map((node: any) => {
-    const layout = nodeLayout(node, editor.showData, env);
-    const run = runMark(editor, node.id);
-    const ui = node.metadata?.ui ?? { x: 0, y: 0 };
-    return {
-      id: node.id,
-      type: "card",
-      position: dragged.get(node.id) ?? { x: ui.x, y: ui.y },
-      width: layout.width,
-      height: layout.height,
-      selected: editor.selection.has(node.id),
-      data: {
-        node, layout, env, rev, run,
-        isEntry: graph.entry === node.id,
-        issues: issuesByNode.get(node.id) ?? [],
-        marked: Boolean(marks?.has(node.id)),
-        dim: running && run === null,
-        highlightVar: editor.highlightedVar,
-        labels: { entry: t("app.card.entry") },
-      } satisfies CardData,
-    };
-  });
-}
+  | { screen: XYPosition; flow: XYPosition; mode: "free"; key: string | null }
+  | { screen: XYPosition; flow: XYPosition; mode: "connect"; key: string | null; from: string; portIndex: number }
+  | { screen: XYPosition; flow: XYPosition; mode: "insert"; key: string | null; from: string; portIndex: number };
 
 function CanvasInner() {
   const editor = useEditor();
@@ -90,7 +45,8 @@ function CanvasInner() {
   const wrapper = useRef<HTMLDivElement>(null);
   const dragged = useRef(new Map<string, XYPosition>());
   const pointer = useRef<XYPosition | null>(null);
-  const [cards, setCards] = useState<CardNode[]>([]);
+  const focusing = useRef<{ id: string; until: number } | null>(null);
+  const [nodes, setNodes] = useState<Node[]>([]);
   const [hovered, setHovered] = useState<string | null>(null);
   const [addAt, setAddAt] = useState<AddAt | null>(null);
   const [addOpen, setAddOpen] = useState(false);
@@ -103,9 +59,12 @@ function CanvasInner() {
   }, [editor]);
 
   const rev = editor.version;
-  useEffect(() => {
-    setCards(buildCards(editor, dragged.current, rev));
-  }, [editor, rev]);
+  const shown = useMemo(() => shownGraphs(editor), [editor, rev]);
+  const shownOf = useCallback((key: string | null): Shown =>
+    shown.find((g) => g.key === key) ?? { key, graph: editor.graphOf(key), frame: null }, [shown, editor]);
+  const openAlone = useCallback((key: string) => editor.openGraph(key), [editor]);
+  const rebuild = useCallback(() => setNodes(buildNodes(editor, shown, dragged.current, rev, openAlone)), [editor, shown, rev, openAlone]);
+  useEffect(rebuild, [rebuild]);
 
   /**
    * Fit the graph, unless that makes the cards unreadable: a long pipeline
@@ -116,7 +75,7 @@ function CanvasInner() {
     await flow.fitView({ padding: 0.15, duration: 0, maxZoom: 1.1 });
     const zoom = flow.getZoom();
     if (zoom >= 0.6) return;
-    const bounds = flow.getNodesBounds(flow.getNodes().filter((n) => n.type === "card"));
+    const bounds = flow.getNodesBounds(flow.getNodes().filter((n) => n.type === "card" && !n.parentId));
     const rect = wrapper.current?.getBoundingClientRect();
     if (!rect) return;
     const readable = 0.8;
@@ -127,192 +86,167 @@ function CanvasInner() {
     });
   }, [flow]);
 
-  // the canvas tells the editor how to reach it: fit, centre, paste point
+  // the canvas tells the editor how to reach it: fit, centre, paste point,
+  // all in the coordinates of the graph being edited
   useEffect(() => {
+    const own = (at: XYPosition) => toGraph(shownOf(editor.model.graphKey), at);
     editor.canvas = {
       fitView: () => void fitReadable(),
       centerWorld: () => {
         const rect = wrapper.current?.getBoundingClientRect();
         if (!rect) return { x: 0, y: 0 };
-        return flow.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 });
+        return own(flow.screenToFlowPosition({ x: rect.left + rect.width / 2, y: rect.top + rect.height / 2 }));
       },
-      pasteAnchor: () => (pointer.current ? flow.screenToFlowPosition(pointer.current) : null),
+      pasteAnchor: () => (pointer.current ? own(flow.screenToFlowPosition(pointer.current)) : null),
       focusNode: (id) => {
-        const node = flow.getNode(id);
+        // remembered for a moment: if the canvas narrows next (the inspector
+        // opening for this very node), the node is brought into view again
+        focusing.current = { id, until: Date.now() + 800 };
+        const node = flow.getInternalNode(fid(editor.model.graphKey, id));
         if (!node) return;
+        const at = node.internals.positionAbsolute;
         const rect = wrapper.current?.getBoundingClientRect();
         const zoom = flow.getZoom();
         const w = node.width ?? 220;
         const h = node.height ?? 80;
         // only move when the card is not already comfortably in view
         if (rect) {
-          const p = flow.flowToScreenPosition(node.position);
+          const p = flow.flowToScreenPosition(at);
           const inside = p.x > rect.left + 20 && p.y > rect.top + 20
             && p.x + w * zoom < rect.right - 20 && p.y + h * zoom < rect.bottom - 20;
           if (inside) return;
         }
-        void flow.setCenter(node.position.x + w / 2, node.position.y + h / 2, { zoom, duration: 250 });
+        // from the canvas's real size: React Flow's own idea of it lags a
+        // frame behind when the inspector has just opened
+        const width = rect?.width ?? 0;
+        const height = rect?.height ?? 0;
+        void flow.setViewport({
+          x: width / 2 - (at.x + w / 2) * zoom,
+          y: height / 2 - (at.y + h / 2) * zoom,
+          zoom,
+        }, { duration: 250 });
       },
     };
     return () => { editor.canvas = null; };
-  }, [editor, flow, fitReadable]);
+  }, [editor, flow, fitReadable, shownOf]);
 
-  // regions are framed around wherever their cards are now, mid-drag included
-  const graph = editor.model.graph;
-  const { regionNodes, regions } = useMemo(() => {
-    const byId = new Map(cards.map((c) => [c.id, c]));
-    const placed = {
-      nodes: graph.nodes.map((n: any) => {
-        const card = byId.get(n.id);
-        return card ? { ...n, metadata: { ...n.metadata, ui: card.position } } : n;
-      }),
-    };
-    const env = { stages: editor.stages };
-    const found = computeRegions(graph, env);
-    const list: Node[] = [];
-    for (const region of found) {
-      const box = regionBounds(region, placed, (n: any) => byId.get(n.id)?.data.layout ?? { width: 220, height: 80 }, 22, 22);
-      region.box = box;
-      if (!box) continue;
-      list.push({
-        id: `region:${region.key}`,
-        type: "region",
-        position: { x: box.x, y: box.y },
-        width: box.width,
-        height: box.height,
-        zIndex: -1,
-        selectable: false,
-        draggable: false,
-        focusable: false,
-        data: { title: region.title, color: region.color },
-      });
-    }
-    return { regionNodes: list, regions: found };
-  }, [cards, graph, editor.stages]);
-
-  const nodes = useMemo(() => [...regionNodes, ...cards] as Node[], [regionNodes, cards]);
+  useEffect(() => {
+    const host = wrapper.current;
+    if (!host) return;
+    let width = host.clientWidth;
+    const observer = new ResizeObserver(() => {
+      const narrower = host.clientWidth < width;
+      width = host.clientWidth;
+      const pending = focusing.current;
+      // a frame later, once React Flow has measured its new size too
+      if (narrower && pending && pending.until > Date.now()) {
+        requestAnimationFrame(() => editor.canvas?.focusNode(pending.id));
+      }
+    });
+    observer.observe(host);
+    return () => observer.disconnect();
+  }, [editor]);
 
   const onInsert = useCallback((from: string, portIndex: number, at: XYPosition) => {
-    setAddAt({ mode: "insert", from, portIndex, screen: at, flow: flow.screenToFlowPosition(at) });
+    const { key, id } = parseFid(from);
+    setAddAt({ mode: "insert", key, from: id, portIndex, screen: at, flow: flow.screenToFlowPosition(at) });
   }, [flow]);
 
-  const edges = useMemo(() => {
-    const out: Edge[] = [];
-    const ids = new Set(graph.nodes.map((n: any) => n.id));
-    // the run's trail: consecutive nodes of the run, as edges
-    const visited: string[] = editor.runner.visited;
-    const walked = new Set<string>();
-    for (let i = 1; i < visited.length; i++) walked.add(`${visited[i - 1]}>${visited[i]}`);
-    const live = editor.runner.active;
-    const selectedEdge = editor.selection.current?.type === "edge" ? editor.selection.current : null;
-
-    for (const card of cards) {
-      const node = card.data.node;
-      card.data.layout.orders.forEach((port: any, k: number) => {
-        if (port.add) return;
-        const target = port.get?.();
-        if (!target || !ids.has(target)) return;
-        const trail = walked.has(`${node.id}>${target}`);
-        out.push({
-          id: `o:${node.id}:${k}`,
-          type: "order",
-          source: node.id,
-          sourceHandle: `o${k}`,
-          target,
-          targetHandle: "in",
-          selected: Boolean(selectedEdge && selectedEdge.from === node.id && selectedEdge.portIndex === k),
-          data: {
-            regions, portIndex: k, trail,
-            live: live && trail && editor.runner.node === target,
-            dashed: Boolean(port.dashed),
-            canInsert: true,
-            onInsert,
-          },
-        });
-      });
-    }
-
-    if (editor.dataMode !== "off") {
-      const focus = new Set<string>();
-      if (hovered) focus.add(hovered);
-      for (const id of editor.selection.nodes) focus.add(id);
-      dataLinks(graph).forEach((link: any, i: number) => {
-        const strong = focus.has(link.writerId) || focus.has(link.readerId)
-          || editor.highlightedVar === link.name;
-        if (editor.dataMode === "focus" && !strong) return;
-        out.push({
-          id: `d:${i}:${link.writerId}:${link.readerId}:${link.name}`,
-          type: "data",
-          source: link.writerId,
-          sourceHandle: `dout${link.outIndex}`,
-          target: link.readerId,
-          targetHandle: `din${link.inIndex}`,
-          selectable: false,
-          focusable: false,
-          zIndex: 1,
-          data: { name: link.name, color: varColor(link.name), ordered: link.ordered, strong },
-        });
-      });
-    }
-    return out;
-  }, [cards, graph, regions, editor, hovered, onInsert, rev]);
+  const edges = useMemo(() => buildEdges(editor, shown, nodes, { hovered, onInsert }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [editor, shown, nodes, hovered, onInsert, rev]);
 
   // ------------------------------------------------------------ gestures
 
   const onNodesChange = useCallback((changes: NodeChangeset<Node>) => {
-    let selection: Set<string> | null = null;
-    const relevant = changes.toArray().filter((c: any) => !String(c.id ?? "").startsWith("region:"));
-    for (const change of relevant) {
-      if (change.type === "position" && change.position) dragged.current.set(change.id, change.position);
-      if (change.type === "select") {
-        selection ??= new Set(editor.selection.nodes);
-        if (change.selected) selection.add(change.id);
-        else selection.delete(change.id);
+    let picked: { key: string | null; ids: Set<string> } | null = null;
+    let moved = false;
+    for (const change of changes.toArray() as any[]) {
+      const flowId = String(change.id ?? "");
+      if (flowId.startsWith("region:")) continue;
+      if (change.type === "position" && change.position) {
+        dragged.current.set(flowId, change.position);
+        moved = true;
+      }
+      if (change.type === "select" && !flowId.startsWith("frame:")) {
+        const { key, id } = parseFid(flowId);
+        if (key !== editor.model.graphKey) {
+          // a node of another graph: that graph becomes the one being edited
+          if (change.selected) picked = { key, ids: new Set([id]) };
+          continue;
+        }
+        if (picked && picked.key !== key) continue;
+        picked ??= { key, ids: new Set(editor.selection.nodes) };
+        if (change.selected) picked.ids.add(id);
+        else picked.ids.delete(id);
       }
     }
-    const moves = relevant.filter((c) => c.type === "position");
-    if (moves.length) {
-      setCards((current) => current.map((card) => {
-        const at = dragged.current.get(card.id);
-        return at ? { ...card, position: at } : card;
+    if (moved) {
+      setNodes((current) => current.map((n) => {
+        const at = dragged.current.get(n.id);
+        return at ? { ...n, position: at } : n;
       }));
     }
-    if (selection) {
-      const same = selection.size === editor.selection.nodes.size
-        && [...selection].every((id) => editor.selection.has(id));
-      if (!same) editor.selection.setNodes(selection);
+    if (picked) {
+      if (picked.key !== editor.model.graphKey) editor.focusGraph(picked.key);
+      const ids = picked.ids;
+      const same = ids.size === editor.selection.nodes.size && [...ids].every((id) => editor.selection.has(id));
+      if (!same) editor.selection.setNodes(ids);
     }
   }, [editor]);
 
   const onNodeDragStop = useCallback(() => {
     if (!dragged.current.size) return;
-    for (const [id, at] of dragged.current) {
-      const node = editor.model.node(id);
+    let touched = false;
+    for (const [flowId, at] of dragged.current) {
+      if (flowId.startsWith("frame:")) {
+        // a frame moved: its subpipeline's nodes keep their own coordinates
+        const key = flowId.slice("frame:".length);
+        const frame = editor.frames.get(key);
+        // in place: the scene holds this very object
+        if (frame) Object.assign(frame, { x: Math.round(at.x), y: Math.round(at.y) });
+        continue;
+      }
+      const { key, id } = parseFid(flowId);
+      const node = editor.graphOf(key)?.nodes.find((n: any) => n.id === id);
       if (!node) continue;
-      node.metadata = { ...(node.metadata ?? {}), ui: { x: Math.round(at.x), y: Math.round(at.y) } };
+      const frame = shownOf(key).frame;
+      const ui = frame
+        ? { x: at.x - FRAME_PAD + frame.ox, y: at.y - FRAME_HEAD - FRAME_PAD + frame.oy }
+        : at;
+      node.metadata = { ...(node.metadata ?? {}), ui: { x: Math.round(ui.x), y: Math.round(ui.y) } };
+      touched = true;
     }
     dragged.current.clear();
-    editor.model.touch();
-  }, [editor]);
+    if (touched) editor.model.touch();
+    else rebuild();
+  }, [editor, shownOf, rebuild]);
 
   const onConnect = useCallback((c: { source: string; sourceHandle?: string | null; target: string }) => {
+    const from = parseFid(c.source);
+    const to = parseFid(c.target);
     const index = Number(c.sourceHandle?.slice(1));
-    if (Number.isInteger(index)) editor.model.connect(c.source, index, c.target);
+    if (from.key !== to.key || !Number.isInteger(index)) return;
+    editor.focusGraph(from.key);
+    editor.model.connect(from.id, index, to.id);
   }, [editor]);
 
   const onConnectEnd = useCallback((event: MouseEvent | TouchEvent, state: FinalConnectionState) => {
     if (state.isValid || !state.fromNode || !state.fromHandle?.id?.startsWith("o")) return;
     const point = "changedTouches" in event ? event.changedTouches[0] : event;
     const screen = { x: point.clientX, y: point.clientY };
+    const { key, id } = parseFid(state.fromNode.id);
     setAddAt({
-      mode: "connect", from: state.fromNode.id, portIndex: Number(state.fromHandle.id.slice(1)),
+      mode: "connect", key, from: id, portIndex: Number(state.fromHandle.id.slice(1)),
       screen, flow: flow.screenToFlowPosition(screen),
     });
   }, [flow]);
 
   const pick = useCallback((spec: NodeSpec) => {
     if (!addAt) return;
-    const pos = { x: addAt.flow.x - 110, y: addAt.flow.y };
+    editor.focusGraph(addAt.key);
+    const at = toGraph(shownOf(addAt.key), addAt.flow);
+    const pos = { x: at.x - 110, y: at.y };
     let created: any = null;
     if (addAt.mode === "connect") created = editor.model.createConnected(addAt.from, addAt.portIndex, spec, pos);
     else if (addAt.mode === "insert") {
@@ -322,13 +256,16 @@ function CanvasInner() {
     else created = editor.model.createAt(spec, pos);
     setAddAt(null);
     if (created) editor.selection.set({ type: "node", id: created.id });
-  }, [addAt, editor]);
+  }, [addAt, editor, shownOf]);
 
   const onPaneDoubleClick = (event: ReactMouseEvent) => {
     const target = event.target as HTMLElement;
-    if (!target.classList.contains("react-flow__pane")) return;
+    const frame = target.closest(".react-flow__node-frame");
+    if (!frame && !target.classList.contains("react-flow__pane")) return;
     const screen = { x: event.clientX, y: event.clientY };
-    setAddAt({ mode: "free", screen, flow: flow.screenToFlowPosition(screen) });
+    // inside a frame the new node goes into that subpipeline
+    const key = frame ? (frame.getAttribute("data-id") ?? "").slice("frame:".length) : (editor.framed ? null : editor.model.graphKey);
+    setAddAt({ mode: "free", key, screen, flow: flow.screenToFlowPosition(screen) });
   };
 
   const anchorStyle = addAt && wrapper.current
@@ -357,15 +294,21 @@ function CanvasInner() {
               onNodeDragStop={onNodeDragStop}
               onConnect={onConnect}
               onConnectEnd={onConnectEnd}
-              isValidConnection={(c) => Boolean(c.sourceHandle?.startsWith("o")) && c.targetHandle === "in" && c.source !== c.target}
+              isValidConnection={(c) => Boolean(c.sourceHandle?.startsWith("o")) && c.targetHandle === "in"
+                && c.source !== c.target && parseFid(c.source).key === parseFid(c.target).key}
               onNodeMouseEnter={(_, node) => { if (node.type === "card") setHovered(node.id); }}
               onNodeMouseLeave={() => setHovered(null)}
               onNodeContextMenu={(_, node) => {
-                if (node.type === "card" && !editor.selection.has(node.id)) editor.selection.set({ type: "node", id: node.id });
+                if (node.type !== "card") return;
+                const { key, id } = parseFid(node.id);
+                editor.focusGraph(key);
+                if (!editor.selection.has(id)) editor.selection.set({ type: "node", id });
               }}
               onEdgeClick={(_, edge) => {
                 if (edge.type !== "order") return;
-                editor.selection.set({ type: "edge", from: edge.source, portIndex: Number(edge.sourceHandle?.slice(1)) });
+                const { key, id } = parseFid(edge.source);
+                editor.focusGraph(key);
+                editor.selection.set({ type: "edge", from: id, portIndex: Number(edge.sourceHandle?.slice(1)) });
               }}
               onPaneClick={() => { if (sel) editor.selection.clear(); }}
               onMoveEnd={(_, viewport) => { editor.view = viewport; editor.persist(); }}
@@ -383,7 +326,7 @@ function CanvasInner() {
             >
               <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="var(--canvas-dot)" />
               <Controls showInteractive={false} position="bottom-left" />
-              <MiniMap position="bottom-right" pannable zoomable nodeColor={(n) => (n.type === "region" ? "transparent" : "var(--border-strong)")}
+              <MiniMap position="bottom-right" pannable zoomable nodeColor={(n) => (n.type === "card" ? "var(--border-strong)" : "transparent")}
                 nodeStrokeWidth={0} maskStrokeWidth={0} style={{ width: 160, height: 100 }} />
             </ReactFlow>
           </div>
@@ -416,7 +359,7 @@ function CanvasInner() {
         </Popover>
       </div>
 
-      {graph.nodes.length === 0
+      {!editor.framed && editor.model.graph.nodes.length === 0
         ? (
           <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
             <div className="text-center">

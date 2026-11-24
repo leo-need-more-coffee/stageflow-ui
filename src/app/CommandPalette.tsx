@@ -74,6 +74,9 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                         {t("view.wires")}: {t(`view.wires.${mode}`)} {editor.dataMode === mode ? "✓" : ""}
                       </Item>
                     ))}
+                    <Item onSelect={run(() => editor.toggleSubgraphs())}>
+                      {t("app.graph.beside")} {editor.showSubgraphs ? "✓" : ""}
+                    </Item>
                     <Item onSelect={run(() => editor.toggleDescriptions())}>
                       {t("view.descriptions")} {editor.showDescriptions ? "✓" : ""}
                     </Item>

@@ -610,5 +610,12 @@
   "app.add.noRecent": "Nothing used yet",
   "app.add.keysMove": "move",
   "app.add.keysPick": "add",
-  "app.add.keysClose": "close"
+  "app.add.keysClose": "close",
+
+  "app.graph.beside": "Subpipelines beside the main graph",
+  "app.frame.sub": "subpipeline",
+  "app.frame.summary": "{nodes} nodes · called {callers}×",
+  "app.frame.unused": "{nodes} nodes · not called",
+  "app.frame.open": "Open on its own",
+  "app.frame.empty": "Empty — double-click to add a node"
 }

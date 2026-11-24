@@ -137,6 +137,16 @@ export class Editor extends EventTarget {
   issues: Issue[] = [];
   dataMode: DataMode;
   showDescriptions = true;
+  /** Subpipelines drawn as frames beside the main graph, editable in place. */
+  showSubgraphs = true;
+  /** A subpipeline opened on its own, the way the old editor showed them;
+   * null while the main graph (with its frames) is on the canvas. */
+  standalone: string | null = null;
+  /** Where each subpipeline's frame stands, kept for the session. */
+  frames = new Map<string, { x: number; y: number; ox: number; oy: number }>();
+  /** Switching the graph being edited by clicking into a frame must not
+   * move the view the way opening a graph does. */
+  #quietGraph = false;
   runDelay: number;
   runVars: { vars: Record<string, unknown>; entered: Record<string, string> } = { vars: {}, entered: {} };
   clipboard: GraphNode[] = [];
@@ -183,6 +193,7 @@ export class Editor extends EventTarget {
     if (saved?.ui) {
       this.dataMode = saved.ui.dataMode ?? this.dataMode;
       this.showDescriptions = saved.ui.showDescriptions ?? this.showDescriptions;
+      this.showSubgraphs = saved.ui.showSubgraphs ?? this.showSubgraphs;
       if (saved.ui.runVars) this.runVars = { vars: {}, entered: {}, ...saved.ui.runVars };
       if (typeof saved.ui.runDelay === "number") this.runDelay = saved.ui.runDelay;
     }
@@ -195,7 +206,10 @@ export class Editor extends EventTarget {
     const pipeline = saved?.pipeline ?? options.pipeline;
     if (pipeline) this.model.setPipeline(pipeline, { keepLayout: Boolean(saved?.pipeline) });
     else this.issues = this.validate();
-    if (saved?.graphKey) this.model.setGraph(saved.graphKey);
+    if (saved?.graphKey) {
+      this.standalone = saved.graphKey;
+      this.model.setGraph(saved.graphKey);
+    }
     if (saved?.view && Number.isFinite(saved.view.scale)) {
       this.savedView = { x: saved.view.x ?? 0, y: saved.view.y ?? 0, zoom: saved.view.scale };
     }
@@ -222,6 +236,7 @@ export class Editor extends EventTarget {
       ui: {
         dataMode: this.dataMode,
         showDescriptions: this.showDescriptions,
+        showSubgraphs: this.showSubgraphs,
         runVars: this.runVars,
         runDelay: this.runDelay,
       },
@@ -251,7 +266,12 @@ export class Editor extends EventTarget {
     });
     this.model.addEventListener("reset", (event: Event) => {
       const change = (event as CustomEvent).detail;
-      if (!change || change.fresh) requestAnimationFrame(() => this.canvas?.fitView());
+      // a new document places its frames afresh
+      if (change?.fresh) this.frames.clear();
+      if (this.standalone !== null && !(this.standalone in (this.model.pipeline.subpipelines ?? {}))) this.standalone = null;
+      const quiet = this.#quietGraph;
+      this.#quietGraph = false;
+      if (!quiet && (!change || change.fresh)) requestAnimationFrame(() => this.canvas?.fitView());
       this.lastChange = change ?? null;
       this.#mark(change);
     });
@@ -319,7 +339,7 @@ export class Editor extends EventTarget {
       this.#mark(this.lastChange, true);
       // bring what changed into view, or the change could be off screen
       const first = this.lastChange.added?.[0] ?? this.lastChange.changed?.[0];
-      if (first) setTimeout(() => this.canvas?.focusNode(first), 50);
+      if (first) this.#focusSoon(first);
     } else {
       this.pending = null;
     }
@@ -515,7 +535,7 @@ export class Editor extends EventTarget {
     const node = (selected?.type === "node" ? this.model.appendAfter(selected.id, spec) : null)
       ?? this.model.createAt(spec, this.#centerPos());
     this.selection.set({ type: "node", id: node.id });
-    requestAnimationFrame(() => this.canvas?.focusNode(node.id));
+    this.#focusSoon(node.id);
     return node;
   }
 
@@ -524,19 +544,65 @@ export class Editor extends EventTarget {
     return { x: center.x - NODE_MIN_W / 2, y: center.y - 50 };
   }
 
-  /** Open a graph: the root (null) or a subpipeline. */
+  /** Whether the canvas shows the main graph with its subpipelines beside it. */
+  get framed() {
+    return this.showSubgraphs && this.standalone === null
+      && Object.keys(this.model.pipeline.subpipelines ?? {}).length > 0;
+  }
+
+  /** A graph by key: the root (null) or a subpipeline. */
+  graphOf(key: string | null): any {
+    return key === null ? this.model.pipeline : this.model.pipeline.subpipelines?.[key];
+  }
+
+  /** Open a graph on its own: the root (null) or a subpipeline. */
   openGraph(key: string | null) {
     this.selection.clear();
+    this.standalone = key;
     this.model.setGraph(key);
+  }
+
+  /**
+   * Make a graph the one edits go to, without changing what is shown: a
+   * click on a node in a subpipeline's frame.
+   */
+  focusGraph(key: string | null) {
+    if (key === this.model.graphKey) return;
+    this.selection.clear();
+    this.#quietGraph = true;
+    this.model.setGraph(key);
+  }
+
+  toggleSubgraphs() {
+    this.showSubgraphs = !this.showSubgraphs;
+    if (!this.showSubgraphs && this.standalone === null && this.model.graphKey !== null) {
+      // the graph being edited is no longer on screen; show the main one
+      this.model.setGraph(null);
+    }
+    this.persist();
+    this.changed();
+    requestAnimationFrame(() => this.canvas?.fitView());
   }
 
   /** Go to an issue's node, in whichever graph it is. */
   reveal(issue: Issue) {
-    if (issue.graph !== this.model.graphKey) this.openGraph(issue.graph);
+    if (issue.graph !== this.model.graphKey) {
+      if (this.framed || (this.showSubgraphs && issue.graph !== null && this.standalone === null)) this.focusGraph(issue.graph);
+      else this.openGraph(issue.graph);
+    }
     if (issue.node) {
       this.selection.set({ type: "node", id: issue.node });
-      requestAnimationFrame(() => this.canvas?.focusNode(issue.node!));
+      this.#focusSoon(issue.node);
     }
+  }
+
+  /**
+   * Bring a node into view on the next frame. Selecting it opens the
+   * inspector, which narrows the canvas; the canvas brings the node into view
+   * again when that happens (see the ResizeObserver in Canvas).
+   */
+  #focusSoon(id: string) {
+    requestAnimationFrame(() => this.canvas?.focusNode(id));
   }
 
   setStatusNote(owner: string, text: string, title = "", onClick: (() => void) | null = null) {

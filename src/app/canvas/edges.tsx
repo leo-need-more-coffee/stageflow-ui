@@ -121,3 +121,15 @@ export function EdgeDefs() {
     </svg>
   );
 }
+
+/** The dashed line from a call to the subpipeline's frame. */
+export function SubrefEdgeView(props: EdgeProps) {
+  const { id, sourceX, sourceY, targetX, targetY } = props;
+  const [path] = getBezierPath({
+    sourceX, sourceY, sourcePosition: Position.Right,
+    targetX, targetY, targetPosition: Position.Left,
+    curvature: 0.3,
+  });
+  return <BaseEdge id={id} path={path} interactionWidth={0}
+    style={{ stroke: "var(--fg-subtle)", strokeDasharray: "4 4", strokeWidth: 1.25 }} />;
+}

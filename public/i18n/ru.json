@@ -610,5 +610,12 @@
   "app.add.noRecent": "Пока ничего не использовали",
   "app.add.keysMove": "выбор",
   "app.add.keysPick": "добавить",
-  "app.add.keysClose": "закрыть"
+  "app.add.keysClose": "закрыть",
+
+  "app.graph.beside": "Субпайплайны рядом с основным",
+  "app.frame.sub": "субпайплайн",
+  "app.frame.summary": "узлов {nodes} · вызывается {callers}×",
+  "app.frame.unused": "узлов {nodes} · нигде не вызывается",
+  "app.frame.open": "Открыть отдельно",
+  "app.frame.empty": "Пусто — двойной клик, чтобы добавить узел"
 }

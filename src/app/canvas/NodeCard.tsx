@@ -10,7 +10,7 @@
  * reads on the left, what it writes on the right.
  */
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
-import { AlertCircle, Check, Hourglass, Loader2, X } from "lucide-react";
+import { AlertCircle, Check, Hourglass, Loader2, Maximize2, X } from "lucide-react";
 import { memo } from "react";
 
 import { varColor } from "@/core/colors.js";
@@ -90,6 +90,10 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
       {/* the inlet: any order edge comes in here */}
       {node.type !== "entry"
         ? <Handle type="target" position={Position.Top} id="in" style={{ left: layout.width / 2 }} />
+        : null}
+      {/* where the dashed line to the subpipeline's frame starts */}
+      {node.type === "subpipeline"
+        ? <Handle type="source" position={Position.Right} id="sub" isConnectable={false} className="!opacity-0" style={{ top: HEADER_H / 2 }} />
         : null}
 
       <div className="flex items-center gap-2.5 px-3" style={{ height: HEADER_H }}>
@@ -198,6 +202,44 @@ export function RegionFrame({ data }: NodeProps<RegionNode>) {
         style={{ color: `color-mix(in oklab, ${data.color} 80%, var(--fg))` }}>
         {data.title}
       </div>
+    </div>
+  );
+}
+
+/** A subpipeline beside the main graph: its nodes live inside, editable. */
+export interface FrameData extends Record<string, unknown> {
+  key: string;
+  count: number;
+  callers: number;
+  editing: boolean;
+  onOpen: (key: string) => void;
+  labels: { sub: string };
+  summary: string;
+  openTitle: string;
+  emptyText: string;
+}
+
+export type FrameNode = Node<FrameData, "frame">;
+
+export function SubgraphFrame({ data }: NodeProps<FrameNode>) {
+  return (
+    <div className={cn("size-full rounded-2xl border bg-surface/40 transition-colors",
+      data.editing ? "border-accent/60" : "border-border-strong")}>
+      <Handle type="target" position={Position.Left} id="frame" isConnectable={false} className="!opacity-0" style={{ top: 20 }} />
+      <div className="sf-frame-handle flex h-10 cursor-grab items-center gap-2 rounded-t-2xl border-b border-border bg-surface/80 px-3 active:cursor-grabbing">
+        <span className="rounded bg-surface-2 px-1.5 py-0.5 text-[10.5px] font-medium text-muted">{data.labels.sub}</span>
+        <span className="font-mono text-[12.5px] font-medium">{data.key}</span>
+        <span className="text-[11.5px] text-subtle">{data.summary}</span>
+        <span className="flex-1" />
+        <button type="button" title={data.openTitle}
+          className="nodrag flex size-6 items-center justify-center rounded text-subtle hover:bg-surface-2 hover:text-fg"
+          onClick={() => data.onOpen(data.key)}>
+          <Maximize2 size={13} />
+        </button>
+      </div>
+      {!data.count
+        ? <div className="flex h-[calc(100%-40px)] items-center justify-center text-[12px] text-subtle">{data.emptyText}</div>
+        : null}
     </div>
   );
 }
