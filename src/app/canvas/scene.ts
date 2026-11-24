@@ -98,6 +98,12 @@ export function toGraph(shown: Shown, at: XYPosition): XYPosition {
   };
 }
 
+/** Whether a node came with the outside change that has just arrived. */
+function isNew(editor: Editor, key: string | null, id: string) {
+  const incoming = editor.incoming;
+  return Boolean(incoming && incoming.key === key && incoming.added.has(id) && Date.now() - incoming.at < 1500);
+}
+
 function runMark(editor: Editor, key: string | null, id: string): RunMark {
   const runner = editor.runner;
   // a run is followed on the main graph; a subpipeline's own steps are not
@@ -142,6 +148,8 @@ export function buildNodes(editor: Editor, shown: Shown[], dragged: Map<string, 
         height: layout.height,
         selected: editing && editor.selection.has(node.id),
         ...(frame ? { parentId: `frame:${key}` } : {}),
+        // a node an agent just added fades in rather than popping up
+        ...(isNew(editor, key, node.id) ? { className: "sf-enter" } : {}),
         data: {
           node, layout, env, rev, run,
           isEntry: graph.entry === node.id,
@@ -270,6 +278,7 @@ export function buildEdges(editor: Editor, shown: Shown[], nodes: Node[], { hove
           selected: Boolean(editing && selectedEdge && selectedEdge.from === node.id && selectedEdge.portIndex === k),
           data: {
             regions, portIndex: k, trail,
+            fresh: isNew(editor, key, node.id) || isNew(editor, key, target),
             live: live && trail && editor.runner.node === target,
             dashed: Boolean(port.dashed),
             canInsert: true,

@@ -21,7 +21,7 @@ import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as R
 import { t } from "@/core/i18n.js";
 import {
   Button, ContextMenu, ContextMenuContent, ContextMenuItem, ContextMenuSeparator, ContextMenuTrigger,
-  Kbd, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, Tip,
+  cn, Kbd, Popover, PopoverAnchor, PopoverContent, PopoverTrigger, Tip,
 } from "@/ui/kit";
 
 import { AddNodeMenu, type NodeSpec } from "../AddNodeMenu";
@@ -50,6 +50,19 @@ function CanvasInner() {
   const [hovered, setHovered] = useState<string | null>(null);
   const [addAt, setAddAt] = useState<AddAt | null>(null);
   const [addOpen, setAddOpen] = useState(false);
+  // for a moment after an outside change, cards glide to their new places
+  // instead of jumping (never while dragging: a card must follow the hand)
+  const [gliding, setGliding] = useState(false);
+  useEffect(() => {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    const glide = () => {
+      setGliding(true);
+      clearTimeout(timer);
+      timer = setTimeout(() => setGliding(false), 700);
+    };
+    editor.addEventListener("incoming", glide);
+    return () => { editor.removeEventListener("incoming", glide); clearTimeout(timer); };
+  }, [editor]);
 
   // "A" anywhere, or "add node" in the command palette
   useEffect(() => {
@@ -279,7 +292,7 @@ function CanvasInner() {
   const contextNodeIds = [...editor.selection.nodes];
 
   return (
-    <div ref={wrapper} className="relative size-full" onDoubleClick={onPaneDoubleClick}
+    <div ref={wrapper} className={cn("relative size-full", gliding && "sf-gliding")} onDoubleClick={onPaneDoubleClick}
       onPointerMove={(e) => { pointer.current = { x: e.clientX, y: e.clientY }; }}>
       <EdgeDefs />
       <ContextMenu>

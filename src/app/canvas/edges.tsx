@@ -24,6 +24,8 @@ export interface OrderEdgeData extends Record<string, unknown> {
   regions: any[];
   portIndex: number;
   trail: boolean;
+  /** drawn along its length when it first appears */
+  fresh?: boolean;
   live: boolean;
   dashed: boolean;
   canInsert: boolean;
@@ -53,8 +55,8 @@ export function OrderEdgeView(props: EdgeProps<OrderEdge>) {
 
   return (
     <g onMouseEnter={() => setHover(true)} onMouseLeave={() => setHover(false)}
-      className={cn(data?.trail && "sf-edge-trail", data?.live && "sf-edge-live")}>
-      <BaseEdge id={id} path={path} interactionWidth={18}
+      className={cn(data?.trail && "sf-edge-trail", data?.live && "sf-edge-live", data?.fresh && "sf-edge-enter")}>
+      <BaseEdge id={id} path={path} interactionWidth={18} pathLength={data?.fresh ? 1 : undefined}
         style={{
           strokeDasharray: data?.dashed && !data?.live ? "5 4" : undefined,
           stroke: selected ? "var(--accent)" : undefined,

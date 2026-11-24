@@ -203,3 +203,43 @@
   stroke-dasharray: 5 3;
   animation: sf-dash 0.6s linear infinite;
 }
+
+/* -------------------------------------------- a graph growing from outside */
+
+/* a card an agent just added */
+@keyframes sf-enter {
+  from { opacity: 0; transform: translateY(8px) scale(0.96); }
+  to { opacity: 1; transform: none; }
+}
+
+.react-flow__node.sf-enter > div {
+  animation: sf-enter 0.45s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+/* a wire that came with it, drawn from its start */
+@keyframes sf-draw {
+  from { stroke-dashoffset: 1; }
+  to { stroke-dashoffset: 0; }
+}
+
+.sf-edge-enter .react-flow__edge-path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: sf-draw 0.6s ease-out 0.2s forwards;
+}
+
+/* cards moved by the change glide to their places */
+.sf-gliding .react-flow__node {
+  transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .react-flow__node.sf-enter > div,
+  .sf-edge-enter .react-flow__edge-path {
+    animation: none;
+    stroke-dasharray: none;
+  }
+  .sf-gliding .react-flow__node {
+    transition: none;
+  }
+}

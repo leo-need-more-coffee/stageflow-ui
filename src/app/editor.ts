@@ -154,6 +154,9 @@ export class Editor extends EventTarget {
   lastChange: any = null;
   /** A graph applied from outside, not yet kept or reverted. */
   pending: { before: Pipeline; change: any } | null = null;
+  /** The nodes the last outside change added, so the canvas can let them
+   * appear rather than pop in; with the graph they were added to. */
+  incoming: { key: string | null; added: Set<string>; at: number } | null = null;
   /** Nodes to mark as changed on the canvas, and until when. */
   marks: { ids: Set<string>; until: number } | null = null;
   /** Chips owned by something other than the graph (the agent bridge). */
@@ -337,9 +340,13 @@ export class Editor extends EventTarget {
     if (this.lastChange && !this.lastChange.fresh) {
       this.pending = { before: had, change: this.lastChange };
       this.#mark(this.lastChange, true);
-      // bring what changed into view, or the change could be off screen
-      const first = this.lastChange.added?.[0] ?? this.lastChange.changed?.[0];
-      if (first) this.#focusSoon(first);
+      this.incoming = { key: this.model.graphKey, added: new Set(this.lastChange.added ?? []), at: Date.now() };
+      this.dispatchEvent(new Event("incoming"));
+      // bring what changed into view, or the change could be off screen; the
+      // newest part, since a graph sent piece by piece grows at its end
+      const added = this.lastChange.added ?? [];
+      const target = added[added.length - 1] ?? this.lastChange.changed?.[0];
+      if (target) this.#focusSoon(target);
     } else {
       this.pending = null;
     }
