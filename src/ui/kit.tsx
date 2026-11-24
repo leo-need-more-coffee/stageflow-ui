@@ -10,7 +10,7 @@ import {
   ContextMenu as CM, Dialog as D, DropdownMenu as DM, Popover as P, Tabs as T,
   Tooltip as TT,
 } from "radix-ui";
-import { Check, ChevronRight, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, Check, ChevronRight, X } from "lucide-react";
 import { forwardRef, type ComponentProps, type ReactNode } from "react";
 import { twMerge } from "tailwind-merge";
 
@@ -71,6 +71,23 @@ export function Kbd({ children, className }: { children: ReactNode; className?: 
   );
 }
 
+/**
+ * Text with its arrows drawn rather than typed: the web build of JetBrains
+ * Mono has no ← or →, and the fallback font's are specks.
+ */
+export function Arrowed({ text, size = 11 }: { text: string; size?: number }) {
+  if (!/[←→]/.test(text)) return <>{text}</>;
+  return (
+    <>
+      {text.split(/([←→])/).map((part, i) => (part === "←"
+        ? <ArrowLeft key={i} size={size} strokeWidth={2} className="mx-0.5 inline-block shrink-0 align-[-1px] opacity-60" />
+        : part === "→"
+          ? <ArrowRight key={i} size={size} strokeWidth={2} className="mx-0.5 inline-block shrink-0 align-[-1px] opacity-60" />
+          : part.trim() ? <span key={i}>{part.trim()}</span> : null))}
+    </>
+  );
+}
+
 // ----------------------------------------------------------------- fields
 
 export const fieldClass = cn(
@@ -111,8 +128,14 @@ export function NativeSelect({ className, mono, ...rest }: ComponentProps<"selec
 export function Label({ children, hint, className, htmlFor }:
   { children: ReactNode; hint?: ReactNode; className?: string; htmlFor?: string }) {
   return (
-    <label htmlFor={htmlFor} className={cn("flex items-baseline gap-2 text-[12px] font-medium text-muted", className)}>
-      <span>{children}</span>
+    <label htmlFor={htmlFor} className={cn("flex items-baseline gap-2 text-[12px] text-muted", className)}>
+      {/* catalogs write labels in lower case, as they read inside a sentence;
+          a bare identifier (on_timeout) is a name and stays as it is */}
+      {typeof children === "string" && /^[a-z][a-z0-9_.]*$/.test(children) && children.includes("_")
+        ? <span className="font-mono text-[11.5px]">{children}</span>
+        : typeof children === "string"
+          ? <span className="inline-block first-letter:uppercase">{children}</span>
+          : <span>{children}</span>}
       {hint ? <span className="font-mono text-[10.5px] font-normal text-subtle">{hint}</span> : null}
     </label>
   );

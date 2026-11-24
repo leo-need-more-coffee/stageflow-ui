@@ -22,7 +22,7 @@ import { has, t } from "@/core/i18n.js";
 import { rank, splitName, tokensOf } from "@/core/search.js";
 import { KINDS, StageKind } from "@/core/kinds.js";
 import { canContinue } from "@/core/wiring.js";
-import { cn } from "@/ui/kit";
+import { cn, Kbd } from "@/ui/kit";
 
 import { useEditor } from "./context";
 import { KindIcon, NodeIcon } from "./kindIcon";
@@ -67,9 +67,10 @@ function remember(key: string) {
 
 /** A category's name for people: the catalog's word, else its last part. */
 export function categoryName(category: string): string {
-  if (has(`category.${category}`)) return t(`category.${category}`);
-  const last = category.split(".").pop() ?? category;
-  return last.charAt(0).toUpperCase() + last.slice(1).replace(/[_-]/g, " ");
+  const name = has(`category.${category}`)
+    ? t(`category.${category}`)
+    : (category.split(".").pop() ?? category).replace(/[_-]/g, " ");
+  return name.charAt(0).toUpperCase() + name.slice(1);
 }
 
 type Filter = "all" | "recent" | "kinds" | string;
@@ -159,7 +160,7 @@ export function AddNodeMenu({ onPick, onlyContinuing = false, autoFocus = true }
   };
 
   const current = shown[active];
-  const total = entries.filter((e) => e.category).length;
+  const total = entries.length;
 
   const railItem = (value: Filter, label: ReactNode, count?: number, icon?: ReactNode) => (
     <button key={value} type="button" onClick={() => setFilter(value)}
@@ -193,7 +194,7 @@ export function AddNodeMenu({ onPick, onlyContinuing = false, autoFocus = true }
           {railItem("kinds", t("app.add.kinds"), entries.filter((e) => !e.category).length, <Shapes size={13} />)}
           {[...categories].map(([group, items]) => (
             <div key={group} className="mt-2">
-              {group ? <div className="px-2 pb-1 text-[10.5px] font-semibold uppercase tracking-wide text-subtle">{group}</div> : null}
+              {group ? <div className="px-2 pb-1 pt-1 text-[11px] font-medium text-subtle">{categoryName(group)}</div> : null}
               {items.map(({ category, count }) => railItem(category, categoryName(category), count))}
             </div>
           ))}
@@ -227,10 +228,10 @@ export function AddNodeMenu({ onPick, onlyContinuing = false, autoFocus = true }
         <Preview entry={current} />
       </div>
 
-      <div className="flex items-center gap-3 border-t border-border px-3 py-1.5 text-[11px] text-subtle">
-        <span>↑↓ {t("app.add.keysMove")}</span>
-        <span>Enter {t("app.add.keysPick")}</span>
-        <span>Esc {t("app.add.keysClose")}</span>
+      <div className="flex h-8 items-center gap-4 border-t border-border px-3 text-[11px] text-subtle">
+        <span className="flex items-center gap-1.5"><Kbd>↑</Kbd><Kbd>↓</Kbd>{t("app.add.keysMove")}</span>
+        <span className="flex items-center gap-1.5"><Kbd>Enter</Kbd>{t("app.add.keysPick")}</span>
+        <span className="flex items-center gap-1.5"><Kbd>Esc</Kbd>{t("app.add.keysClose")}</span>
       </div>
     </div>
   );
@@ -263,7 +264,7 @@ function Preview({ entry }: { entry: Entry | undefined }) {
   const section = (title: string, fields: any[], required = true) => (fields.length
     ? (
       <div>
-        <div className="mb-1 text-[10.5px] font-semibold uppercase tracking-wide text-subtle">{title}</div>
+        <div className="mb-1.5 text-[11px] font-medium text-subtle">{title}</div>
         <div className="flex flex-col gap-1">
           {fields.filter((f) => f.name !== "*").map((f) => (
             <div key={f.name} className="flex items-baseline gap-1.5 text-[11.5px]">
@@ -278,8 +279,10 @@ function Preview({ entry }: { entry: Entry | undefined }) {
     : null);
   return (
     <aside className="flex w-[240px] shrink-0 flex-col gap-3 overflow-y-auto border-l border-border p-3">
-      <div className="break-words font-mono text-[12.5px] font-medium">{entry.name}</div>
-      <div className="text-[11px] text-subtle">{entry.categoryLabel}</div>
+      <div className="flex flex-col gap-0.5">
+        <div className={cn("break-words text-[13px] font-medium", entry.category && "font-mono text-[12.5px]")}>{entry.name}</div>
+        <div className="text-[11px] text-subtle">{entry.categoryLabel}</div>
+      </div>
       {entry.description ? <p className="text-[12px] leading-relaxed text-muted">{entry.description}</p> : null}
       {spec ? section(t("spec.arguments"), spec.arguments ?? []) : null}
       {spec ? section(t("spec.outputs"), spec.outputs ?? [], false) : null}

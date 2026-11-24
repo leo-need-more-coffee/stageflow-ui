@@ -16,7 +16,7 @@ import { memo } from "react";
 import { varColor } from "@/core/colors.js";
 import { DATA_ROW_H, DESC_H, HEAD_H, ORDER_BAR_H, SUB_H } from "@/core/geometry.js";
 import { kindOf } from "@/core/kinds.js";
-import { cn, Tip } from "@/ui/kit";
+import { Arrowed, cn, Tip } from "@/ui/kit";
 
 import { NodeIcon } from "../kindIcon";
 
@@ -59,7 +59,7 @@ function DataRow({ label, color, highlighted, mono = true }:
       highlighted && "text-fg")}
       style={{ height: DATA_ROW_H }}>
       {color ? <span className="size-1.5 shrink-0 rounded-full" style={{ background: color }} /> : null}
-      <span className="truncate">{label}</span>
+      <span className="flex min-w-0 items-center truncate"><Arrowed text={label} size={10} /></span>
     </div>
   );
 }

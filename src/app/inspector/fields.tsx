@@ -10,7 +10,7 @@
  * A text field commits when it is left or on Enter, not on every key, so an
  * undo takes back a word rather than a letter.
  */
-import { Braces, Hash, Plus, Type, Variable, X } from "lucide-react";
+import { Braces, CornerDownRight, Hash, Plus, Type, Variable, X } from "lucide-react";
 import { useEffect, useId, useRef, useState, type ReactNode } from "react";
 
 import { variablesOf } from "@/core/dataflow.js";
@@ -18,7 +18,7 @@ import { t } from "@/core/i18n.js";
 import {
   argRows, celExpr, celSource, celVarRef, outputRows, writeArgRows, writeOutputRows,
 } from "@/core/kinds.js";
-import { Button, cn, Input, Label, NativeSelect, Switch } from "@/ui/kit";
+import { Arrowed, Button, cn, Input, Label, NativeSelect, Switch } from "@/ui/kit";
 
 import type { Editor } from "../editor";
 
@@ -314,7 +314,7 @@ function RowCell({ col, row, env, commit }: { col: any; row: any; env: FieldEnv;
   const style = col.width ? { flex: `0 1 ${col.width}`, minWidth: 0 } : { flex: "1 1 0", minWidth: 0 };
   const list = useId();
   if (col.type === "label") {
-    return <span className="shrink-0 text-subtle" style={{ width: col.width }}>{col.text}</span>;
+    return <span className="flex shrink-0 justify-center text-subtle" style={{ width: col.width }}><Arrowed text={col.text} /></span>;
   }
   if (col.type === "select" && col.key === "source" && col.options?.length === 3) {
     // the three sources: the same buttons as everywhere else
@@ -524,11 +524,11 @@ export function SpecOutputs({ field, env }: { field: any; env: FieldEnv }) {
               <TypeChip type={out.type} />
               {!row ? <span className="text-[11px] text-subtle">{t("outs.notSaved")}</span> : null}
             </div>
-            {out.description ? <div className="-mt-0.5 text-[11.5px] leading-snug text-muted">{out.description}</div> : null}
+            {out.description ? <div className="-mt-0.5 pl-10 text-[11.5px] leading-snug text-muted">{out.description}</div> : null}
             {row
               ? (
-                <div className="flex items-center gap-1.5">
-                  <span className="text-[11px] text-subtle">{t("app.field.into")}</span>
+                <div className="flex items-center gap-2 pl-10" title={t("app.field.into")}>
+                  <CornerDownRight size={14} className="shrink-0 text-subtle" />
                   <VarInput env={env} className="flex-1" value={row.dest} onCommit={(dest) => write(out.name, { dest })} />
                 </div>
               )
@@ -550,8 +550,8 @@ export function SpecOutputs({ field, env }: { field: any; env: FieldEnv }) {
             {unknownField
               ? <div className="text-[11.5px] text-bad">{t("outs.unknownField", { available: known.join(", ") })}</div>
               : row.cel && !row.src ? <div className="text-[11.5px] text-subtle">{t("outs.exprEmpty")}</div> : null}
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] text-subtle">{t("app.field.into")}</span>
+            <div className="flex items-center gap-2 pl-5" title={t("app.field.into")}>
+              <CornerDownRight size={14} className="shrink-0 text-subtle" />
               <VarInput env={env} className="flex-1" value={row.dest} onCommit={(dest) => writeAt(index, { dest })} />
             </div>
           </div>

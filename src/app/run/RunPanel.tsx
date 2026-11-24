@@ -257,7 +257,7 @@ function StepList({ editor, steps, index, following, onPick }:
 
 function PaneTitle({ children, aside }: { children: ReactNode; aside?: ReactNode }) {
   return (
-    <div className="flex h-8 shrink-0 items-center gap-2 px-3 text-[11px] font-semibold uppercase tracking-wide text-subtle">
+    <div className="flex h-8 shrink-0 items-center gap-2 px-3 text-[12px] font-medium text-muted">
       <span className="flex items-center gap-1.5">{children}</span>
       <span className="flex-1" />
       {aside}
@@ -489,7 +489,7 @@ function AnswerForm({ editor }: { editor: Editor }) {
         <Segmented size="sm" value={mode} onChange={setMode}
           options={[{ value: "form", label: t("app.answer.form") }, { value: "json", label: "JSON" }]} />
       </div>
-      <form className="flex max-w-[720px] flex-col gap-2" onSubmit={(e) => { e.preventDefault(); void send(); }}>
+      <form className="flex max-w-[747px] flex-col gap-2 pl-[27px]" onSubmit={(e) => { e.preventDefault(); void send(); }}>
         {mode === "form"
           ? (
             <div className="grid grid-cols-[minmax(80px,max-content)_1fr] items-center gap-x-3 gap-y-1.5">

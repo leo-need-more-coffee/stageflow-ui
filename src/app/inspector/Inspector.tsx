@@ -12,7 +12,7 @@ import { useRef, useState, type ReactNode } from "react";
 import { t, tn } from "@/core/i18n.js";
 import { kindOf } from "@/core/kinds.js";
 import {
-  Button, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, Tab, TabList, TabPanel, Tabs,
+  Button, cn, Menu, MenuContent, MenuItem, MenuSeparator, MenuTrigger, Tab, TabList, TabPanel, Tabs,
 } from "@/ui/kit";
 
 import { useEditor } from "../context";
@@ -27,10 +27,10 @@ const PORT_LABELS: Record<string, string> = {
   next: "port.next", then: "port.then", else: "port.else", default: "port.default", body: "port.body",
 };
 
-function Section({ title, children }: { title?: ReactNode; children: ReactNode }) {
+function Section({ title, children, className }: { title?: ReactNode; children: ReactNode; className?: string }) {
   return (
-    <section className="flex flex-col gap-3 border-b border-border px-4 py-4 last:border-b-0">
-      {title ? <h3 className="text-[11px] font-semibold uppercase tracking-wide text-subtle">{title}</h3> : null}
+    <section className={cn("flex flex-col gap-3 border-b border-border px-4 py-4 last:border-b-0", className)}>
+      {title ? <h3 className="text-[12.5px] font-semibold text-fg">{title}</h3> : null}
       {children}
     </section>
   );
@@ -161,7 +161,7 @@ function NodePanel({ editor, node, drafts, modes }:
             )
             : null}
           {description ? <p className="px-4 pt-4 text-[12.5px] leading-relaxed text-muted">{description}</p> : null}
-          {group("main").length ? <Section>{group("main").map((f: any, i: number) => <div key={i}>{render(f)}</div>)}</Section> : null}
+          {group("main").length ? <Section className={description ? "pt-3" : undefined}>{group("main").map((f: any, i: number) => <div key={i}>{render(f)}</div>)}</Section> : null}
           {group("in").length ? <Section title={t("group.in")}>{group("in").map((f: any, i: number) => <div key={i}>{render(f)}</div>)}</Section> : null}
           {group("out").length ? <Section title={t("group.out")}>{group("out").map((f: any, i: number) => <div key={i}>{render(f)}</div>)}</Section> : null}
           {ports.length
@@ -169,8 +169,14 @@ function NodePanel({ editor, node, drafts, modes }:
               <Section title={t("group.flow")}>
                 {ports.map((port: any) => {
                   const human = port.human ?? (PORT_LABELS[port.key] && t(PORT_LABELS[port.key]));
+                  // a lone "next" under the heading "Next" needs no label of its own
+                  const label = human ?? port.label;
+                  const echoes = String(label).toLowerCase() === t("group.flow").toLowerCase();
+                  const name = <span className="font-mono text-[11.5px]">{port.label}</span>;
                   return (
-                    <Field key={port.key + port.label} label={human ?? port.label} hint={human ? port.label : undefined}>
+                    <Field key={port.key + port.label}
+                      label={echoes ? (ports.length === 1 ? undefined : name) : label}
+                      hint={human && !echoes ? port.label : undefined}>
                       <NodeSelect env={env} value={port.get?.()} onChange={(v) => { port.set?.(v); editor.model.touch(); }} />
                     </Field>
                   );

@@ -7,14 +7,14 @@
  * short enough to read at a glance.
  */
 import {
-  AlertTriangle, Bug, Check, ChevronDown, CircleCheck, Command, Layers, Loader2, Monitor, Moon, MoreHorizontal,
-  Pause, Play, Plus, Redo2, SkipForward, Square, Sun, Undo2, Variable,
+  AlertTriangle, Bug, Check, ChevronDown, CircleCheck, Layers, Loader2, Monitor, Moon, MoreHorizontal,
+  Pause, Play, Plus, Redo2, Search, SkipForward, Square, Sun, Undo2, Variable,
 } from "lucide-react";
 
 import { delayLabel, DELAY_PRESETS } from "@/core/runner.js";
 import { has, locale, locales, setLocale, t, tn } from "@/core/i18n.js";
 import {
-  Badge, Button, cn, Menu, MenuCheck, MenuContent, MenuItem, MenuLabel, MenuRadio, MenuSeparator, MenuSub, MenuTrigger,
+  Badge, Button, Kbd, Menu, MenuCheck, MenuContent, MenuItem, MenuLabel, MenuRadio, MenuSeparator, MenuSub, MenuTrigger,
   Popover, PopoverContent, PopoverTrigger, Tip,
 } from "@/ui/kit";
 
@@ -28,7 +28,7 @@ const mod = /Mac|iPhone|iPad/.test(navigator.platform) ? "⌘" : "Ctrl+";
 
 function Logo() {
   return (
-    <div className="flex items-center gap-2 pl-1 pr-2">
+    <div className="flex items-center gap-2 px-1">
       <svg width="18" height="18" viewBox="0 0 16 16" aria-hidden>
         <path d="M8 1.5 14.5 8 8 14.5 1.5 8z" fill="none" stroke="var(--accent)" strokeWidth="1.8" strokeLinejoin="round" />
         <path d="M8 5.5 10.5 8 8 10.5 5.5 8z" fill="var(--accent)" />
@@ -45,22 +45,24 @@ function GraphSwitcher({ editor }: { editor: Editor }) {
   // what is shown: a subpipeline opened alone, or the main graph (with frames)
   const current = editor.standalone ?? (editor.framed ? null : model.graphKey);
   return (
-    <div className="flex items-center gap-1 text-[13px]">
-      <button type="button" onClick={() => editor.openGraph(null)}
-        className={cn("rounded px-1.5 py-0.5 hover:bg-surface-2", current === null ? "font-medium text-fg" : "text-muted")}>
-        {t("app.graph.main")}
-      </button>
+    <div className="flex items-center text-[13px]">
       {current !== null
         ? (
           <>
-            <span className="text-subtle">/</span>
-            <span className="px-1.5 font-mono text-[12.5px] font-medium">{current}</span>
+            <button type="button" onClick={() => editor.openGraph(null)}
+              className="h-8 rounded-md px-2 text-muted hover:bg-surface-2 hover:text-fg">
+              {t("app.graph.main")}
+            </button>
+            <span className="px-0.5 text-subtle">/</span>
           </>
         )
         : null}
       <Menu>
         <MenuTrigger asChild>
-          <Button variant="ghost" size="icon-sm" aria-label={t("app.graph.switch")}><ChevronDown /></Button>
+          <Button variant="ghost" size="md" className="gap-1 px-2 font-medium text-fg" aria-label={t("app.graph.switch")}>
+            {current === null ? t("app.graph.main") : <span className="font-mono text-[12.5px]">{current}</span>}
+            <ChevronDown className="!size-3.5 text-subtle" />
+          </Button>
         </MenuTrigger>
         <MenuContent>
           <MenuLabel>{t("app.graph.graphs")}</MenuLabel>
@@ -101,7 +103,7 @@ function IssuesChip({ editor }: { editor: Editor }) {
   const issues = editor.issues;
   if (!issues.length) {
     return (
-      <span className="flex items-center gap-1.5 px-2 text-[12px] text-muted">
+      <span className="flex h-8 items-center gap-1.5 px-2 text-[12px] text-muted">
         <CircleCheck size={14} className="text-ok" /> {t("app.issues.none")}
       </span>
     );
@@ -109,7 +111,7 @@ function IssuesChip({ editor }: { editor: Editor }) {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="ghost" size="sm" className="text-bad hover:text-bad">
+        <Button variant="ghost" size="md" className="text-[12px] text-bad hover:text-bad">
           <AlertTriangle /> {tn("app.issues.count", issues.length)}
         </Button>
       </PopoverTrigger>
@@ -149,7 +151,7 @@ function RunControls({ editor }: { editor: Editor }) {
             </>
           )
           : null}
-        <Button size="sm" variant="outline" onClick={() => runner.stop()}>
+        <Button size="md" variant="outline" onClick={() => runner.stop()}>
           <Square className="!size-3 fill-current" /> {t("run.stop")}
         </Button>
       </div>
@@ -158,13 +160,13 @@ function RunControls({ editor }: { editor: Editor }) {
   return (
     <div className="flex items-center">
       <Tip content={t("app.run.tip", { pace: delayLabel(editor.runDelay) })} shortcut="F5">
-        <Button variant="primary" size="sm" className="rounded-r-none" onClick={() => void editor.run({ mode: "run" })}>
+        <Button variant="primary" size="md" className="rounded-r-none pl-2.5" onClick={() => void editor.run({ mode: "run" })}>
           <Play className="fill-current !size-3.5" /> {t("run.start")}
         </Button>
       </Tip>
       <Menu>
         <MenuTrigger asChild>
-          <Button variant="primary" size="sm" className="rounded-l-none border-l border-l-black/15 px-1.5" aria-label={t("app.run.more")}>
+          <Button variant="primary" size="md" className="rounded-l-none border-l border-l-black/15 px-2" aria-label={t("app.run.more")}>
             <ChevronDown />
           </Button>
         </MenuTrigger>
@@ -198,7 +200,7 @@ function RunStatus({ editor }: { editor: Editor }) {
   }[runner.status as string] as any;
   if (!tone) return null;
   return (
-    <Badge tone={tone}>
+    <Badge tone={tone} className="h-6 px-2.5">
       {runner.status === "running" ? <Loader2 size={11} className="animate-spin" /> : null}
       {t(`status.${runner.status}`)}
       {runner.node && (runner.active || runner.awaitingInput) ? <span className="font-mono">· {runner.node}</span> : null}
@@ -213,16 +215,19 @@ export function TopBar({ onCommand }: { onCommand: () => void }) {
   const languages = locales();
 
   return (
-    <header className="flex h-12 shrink-0 items-center gap-2 border-b border-border bg-surface px-2">
+    <header className="flex h-12 shrink-0 items-center gap-1 border-b border-border bg-surface px-3">
       <Logo />
-      <div className="h-5 w-px bg-border" />
+      <div className="mx-2 h-5 w-px bg-border" />
       <GraphSwitcher editor={editor} />
 
       <div className="flex-1" />
 
-      <RunStatus editor={editor} />
-      <IssuesChip editor={editor} />
+      {/* while a run is on, its state is what matters; soundness comes back after */}
+      {editor.runner.status && editor.runner.status !== "idle" && (editor.runner.active || editor.runner.awaitingInput)
+        ? <RunStatus editor={editor} />
+        : <IssuesChip editor={editor} />}
 
+      <div className="mx-1 h-5 w-px bg-border" />
       <div className="flex items-center">
         <Tip content={t("edit.undo")} shortcut={`${mod}Z`}>
           <Button variant="ghost" size="icon" disabled={!editor.model.canUndo} onClick={() => editor.undo()}><Undo2 /></Button>
@@ -243,11 +248,12 @@ export function TopBar({ onCommand }: { onCommand: () => void }) {
         </PopoverContent>
       </Popover>
 
+      <div className="mx-1 h-5 w-px bg-border" />
       <button type="button" onClick={onCommand}
-        className="flex h-8 w-[200px] items-center gap-2 rounded-md border border-border bg-surface-2 px-2.5 text-[12.5px] text-subtle hover:border-border-strong">
-        <Command size={13} />
+        className="mr-1 flex h-8 w-[208px] items-center gap-2 rounded-md border border-border bg-surface pl-2.5 pr-1.5 text-[12.5px] text-subtle transition-colors hover:border-border-strong hover:text-muted">
+        <Search size={14} />
         <span className="flex-1 text-left">{t("app.cmd.placeholderShort")}</span>
-        <span className="text-[11px]">{mod}K</span>
+        <Kbd>{mod}K</Kbd>
       </button>
 
       <RunControls editor={editor} />

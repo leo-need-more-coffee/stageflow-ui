@@ -156,6 +156,11 @@
   stroke: var(--accent);
 }
 
+/* the panels keep the same 12px from the edge as the add button */
+.react-flow__panel {
+  margin: 12px;
+}
+
 .react-flow__controls {
   box-shadow: var(--shadow);
   border-radius: 8px;
@@ -164,7 +169,19 @@
 }
 
 .react-flow__controls-button {
+  width: 32px;
+  height: 32px;
+  padding: 0;
   border-bottom: 1px solid var(--border);
+}
+
+.react-flow__controls-button:last-child {
+  border-bottom: 0;
+}
+
+.react-flow__controls-button svg {
+  max-width: 11px;
+  max-height: 11px;
 }
 
 .react-flow__controls-button svg {
@@ -179,6 +196,8 @@
 }
 
 .react-flow__attribution {
+  margin: 0;
+  padding: 2px 6px;
   background: transparent;
   font-size: 10px;
   opacity: 0.5;

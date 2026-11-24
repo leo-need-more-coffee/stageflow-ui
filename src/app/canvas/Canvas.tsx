@@ -13,7 +13,7 @@
  */
 import {
   Background, BackgroundVariant, Controls, MiniMap, ReactFlow, ReactFlowProvider, useReactFlow,
-  type FinalConnectionState, type Node, type NodeChangeset, type XYPosition,
+  SelectionMode, type FinalConnectionState, type Node, type NodeChangeset, type XYPosition,
 } from "@xyflow/react";
 import { Plus } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState, type MouseEvent as ReactMouseEvent } from "react";
@@ -78,6 +78,9 @@ function CanvasInner() {
   const openAlone = useCallback((key: string) => editor.openGraph(key), [editor]);
   const rebuild = useCallback(() => setNodes(buildNodes(editor, shown, dragged.current, rev, openAlone)), [editor, shown, rev, openAlone]);
   useEffect(rebuild, [rebuild]);
+  // the gesture handlers are made once; they reach the current scene here
+  const rebuildRef = useRef(rebuild);
+  rebuildRef.current = rebuild;
 
   /**
    * Fit the graph, unless that makes the cards unreadable: a long pipeline
@@ -194,12 +197,9 @@ function CanvasInner() {
         else picked.ids.delete(id);
       }
     }
-    if (moved) {
-      setNodes((current) => current.map((n) => {
-        const at = dragged.current.get(n.id);
-        return at ? { ...n, position: at } : n;
-      }));
-    }
+    // the whole scene, not just the moved cards: the frame of a loop or a
+    // try around them has to grow and shrink with the hand
+    if (moved) rebuildRef.current();
     if (picked) {
       if (picked.key !== editor.model.graphKey) editor.focusGraph(picked.key);
       const ids = picked.ids;
@@ -332,9 +332,14 @@ function CanvasInner() {
               zoomOnDoubleClick={false}
               deleteKeyCode={null}
               selectionKeyCode="Shift"
+              attributionPosition="top-right"
               multiSelectionKeyCode={["Shift", "Meta", "Control"]}
               panOnScroll
-              selectionOnDrag={false}
+              // dragging the empty canvas selects, as in a design tool; the
+              // wheel, a touchpad, the middle button or Space+drag pan
+              selectionOnDrag
+              panOnDrag={[1]}
+              selectionMode={SelectionMode.Partial}
               connectionRadius={28}
             >
               <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="var(--canvas-dot)" />
@@ -361,7 +366,7 @@ function CanvasInner() {
         <Popover open={addOpen} onOpenChange={setAddOpen}>
           <Tip content={t("app.add.tip")} shortcut="A" side="right">
             <PopoverTrigger asChild>
-              <Button variant="default" size="sm" className="bg-surface shadow-card">
+              <Button variant="default" size="md" className="bg-surface pl-2.5 shadow-card">
                 <Plus /> {t("app.add.button")}
               </Button>
             </PopoverTrigger>
