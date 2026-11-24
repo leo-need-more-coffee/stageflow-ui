@@ -1,24 +1,17 @@
 /**
  * Reading a server-sent event stream with `fetch` instead of `EventSource`.
  *
- * `EventSource` is the obvious tool and was the one used here, until the
- * editor learned to carry a credential: **it cannot send headers**. Not "it
- * is awkward to" — the constructor takes a URL and nothing else, which is a
- * decision of the platform and not one there is a way round. The usual
- * workaround is to put the token in the query string, where it ends up in
- * access logs, in the referrer and in the history of whoever is screen-
- * sharing. So the stream is read by hand: `fetch` takes headers like every
- * other request, and the credential is attached in exactly one place
- * (`Backend.fetch`) rather than in one place plus an exception.
+ * `EventSource` cannot send headers, so it cannot carry a credential; the
+ * usual workaround, a token in the query string, leaks it into logs and the
+ * referrer. `fetch` takes headers like every other request, and the
+ * credential is added in one place (`Backend.fetch`).
  *
- * What is given up is the automatic reconnect, and it is replaced with a
- * better one: `?from=N` resumes at the event after the last one seen, so a
- * connection that broke mid-run does not lose the events it missed — which
- * is what `Last-Event-ID` would have had to be wired up for anyway.
+ * Reconnecting is done by hand: `?from=N` resumes after the last event seen,
+ * so nothing is lost when a connection drops mid-run.
  *
- * The parser is the SSE wire format and only the part of it that is used:
- * frames separated by a blank line, `data:` lines concatenated, everything
- * else (a `: keep-alive` comment, a `retry:`) ignored.
+ * Only the part of the SSE format that is used is parsed: frames separated by
+ * a blank line, `data:` lines joined, everything else (comments, `retry:`)
+ * ignored.
  */
 import { t } from "./i18n.js";
 
@@ -31,16 +24,14 @@ export class EventStream {
   #tries = 0;
 
   /**
-   * @param url     where the stream is; `?from=` is appended when resuming
-   * @param fetcher `(url, init) => Promise<Response>` — `Backend.fetch`, so
-   *                that the credential comes along
-   * @param onEvent called with each parsed event object
-   * @param onError called when the stream is given up on for good
-   * @param onClose called when the SERVER ended the stream. For a run that is
-   *                the run finishing; for something that should have gone on
-   *                it is the other end going away, and only the caller knows
-   *                which of the two it asked for.
-   * @param from    which event to start at (0 — from the beginning)
+   * @param url     the stream; `?from=` is added when resuming
+   * @param fetcher `(url, init) => Promise<Response>`, usually `Backend.fetch`
+   *                so the credential is sent
+   * @param onEvent called with each parsed event
+   * @param onError called when reconnecting has been given up
+   * @param onClose called when the server ended the stream; whether that is
+   *                expected (a run finished) only the caller knows
+   * @param from    the first event to read (0: from the start)
    */
   constructor(url, { fetcher = fetch, onEvent, onError = null, onClose = null, from = 0 } = {}) {
     this.url = url;
@@ -48,7 +39,7 @@ export class EventStream {
     this.onEvent = onEvent;
     this.onError = onError;
     this.onClose = onClose;
-    // the next event we have not seen; also where a reconnect resumes
+    // the next unseen event; a reconnect resumes here
     this.next = from;
     this.#run();
   }
@@ -63,8 +54,8 @@ export class EventStream {
     while (!this.#closed) {
       try {
         await this.#read();
-        // the server closed the stream. For a run that is the end of it and
-        // nothing has gone wrong; whoever needs to know says so with onClose
+        // the server closed the stream; for a run that is normal, so whether
+        // it matters is up to onClose
         if (!this.#closed) this.onClose?.();
         return;
       } catch (err) {
@@ -95,7 +86,7 @@ export class EventStream {
     for (;;) {
       const { value, done } = await reader.read();
       if (done) return;
-      // a reconnect that succeeded is not a run of bad luck any more
+      // a successful reconnect resets the retry count
       this.#tries = 0;
       buffer += decoder.decode(value, { stream: true });
       let end;
@@ -122,8 +113,7 @@ export class EventStream {
     } catch {
       return; // not ours; a stream may carry frames this editor knows nothing of
     }
-    // the event number is in the event itself, which is what makes a resume
-    // exact rather than approximate
+    // events carry their index, so resuming is exact
     if (typeof event.index === "number") this.next = event.index + 1;
     this.onEvent?.(event);
   }

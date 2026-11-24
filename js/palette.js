@@ -1,19 +1,10 @@
 /**
- * The palette: node types plus the stages from the backend (by category, with
- * a search).
+ * The palette: node types, and the backend's stages by category, with search.
  *
- * A node gets from the palette into the graph in two ways, and both of them
- * CONNECT it:
- *
- *  - by dragging onto the canvas — a drop on an edge inserts the node into it,
- *    on a card attaches it to that card's free port, on empty space simply
- *    creates it there (the canvas hints at what will happen while the node is
- *    in hand);
- *  - by a click — the node stands after the selected one, continuing the chain.
- *
- * A click used to put a card in the centre of the screen unconnected, and it
- * still had to be wired up afterwards — that is, the palette created work
- * rather than a node.
+ * Adding from the palette always connects the node:
+ *  - dragging onto the canvas: dropped on an edge, it is inserted into it; on
+ *    a card, attached to its free port; on empty space, created there;
+ *  - clicking: it is added after the selected node.
  */
 import { categoryColor } from "./colors.js";
 import { has, t } from "./i18n.js";
@@ -29,13 +20,12 @@ function el(tag, className, text) {
 
 export class Palette {
   #filter = "";
-  // the time of the last drop: a drop ends with an ordinary `click`, and
-  // without this cutoff it would add a SECOND node. It cannot be done with a
-  // flag — a drop's own `click` never arrives at all (the redraw throws the
-  // button out of the DOM), the flag stays raised and eats the next real click
+  // when the last drop happened: a drop is followed by a `click` that would add
+  // a second node. A flag would not do, because after a redraw that click
+  // never arrives and the flag would swallow the next real one
   #droppedAt = 0;
 
-  /** @param env — plus addNode/dropHint/dropCreate from the editor */
+  /** @param env also addNode/dropHint/dropCreate from the editor */
   constructor(host, env) {
     this.host = host;
     this.env = env;
@@ -61,9 +51,8 @@ export class Palette {
       const item = el("button", "sf-palette-item");
       item.style.setProperty("--kind-color", kind.color);
       item.append(paintIcon(el("span", "sf-icon"), kind.glyph), el("span", "", kind.title));
-      // a type the backend cannot run stays on the list, dimmed: hiding it
-      // would answer "why is there no map node" with silence, and the answer
-      // is "your backend is older", which is worth saying
+      // a type the backend cannot run is shown dimmed rather than hidden, so
+      // its absence is explained
       const unsupported = this.env.capabilities?.supports(kind.type) === false;
       if (unsupported) item.classList.add("sf-palette-unsupported");
       item.title = unsupported
@@ -92,12 +81,9 @@ export class Palette {
         || (s.description ?? "").toLowerCase().includes(this.#filter));
       if (!matched.length) continue;
 
-      // a category is an id the backend chose. The catalog names the built-in
-      // ones; a host's own category has no entry and shows as it was written,
-      // which is the only honest answer for a word the editor has never seen
-      // asked with `has` first: a miss here is the normal case, and `t` warns
-      // about one — a hosted backend with categories of its own filled the
-      // console with complaints about strings nobody promised
+      // a category is the backend's id. Built-in ones have a translation;
+      // others are shown as written. Checked with `has` first, since `t` warns
+      // about a missing key and custom categories are normal
       const named = has(`category.${category}`);
       this.stagesEl.append(el("div", "sf-palette-cat",
         named ? t(`category.${category}`) : category));
@@ -124,16 +110,13 @@ export class Palette {
       if (performance.now() - this.#droppedAt < 200) return; // the tail of a drop
       this.env.addNode(spec.type, spec.extra ?? {});
     };
-    // a picture inside a button is dragged by the browser as native
-    // drag-and-drop — once that starts, pointerup never reaches us and the drop
-    // "falls through"
+    // stop the browser's native drag of the image, which would swallow pointerup
     item.draggable = false;
     item.addEventListener("dragstart", (e) => e.preventDefault());
 
     item.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
-      // there is nowhere to drop — then do not start the drag either, or the
-      // ghost rides after the cursor, no node appears, and only the code knows
+      // nothing to drop onto, so do not start a drag
       if (!this.env.dropCreate) return;
       let ghost = null;
       const move = (ev) => {
@@ -149,9 +132,8 @@ export class Palette {
         window.removeEventListener("pointerup", up);
         window.removeEventListener("pointercancel", abort);
       };
-      // the button was released outside the window, or the gesture was taken
-      // over by the system: the ghost and the highlight must disappear, but no
-      // node is created
+      // released outside the window or the gesture was taken over: remove the
+      // ghost and the highlight, create nothing
       const abort = () => {
         stop();
         ghost?.remove();
@@ -170,7 +152,7 @@ export class Palette {
     });
   }
 
-  /** A ghost card under the cursor: you can see what exactly you are carrying. */
+  /** A ghost card under the cursor, showing what is being dragged. */
   #ghost(label, icon, iconOpts) {
     const ghost = el("div", "sf-ghost");
     ghost.append(paintIcon(el("span", "sf-icon"), icon, iconOpts), el("span", "", label));

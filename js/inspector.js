@@ -1,26 +1,25 @@
 /**
  * The inspector: the property panel of the selected node or edge.
  *
- * The panel answers questions in the order in which a node is thought about
- * rather than repeating the structure of the JSON: WHAT IT GETS -> WHAT IT
- * GIVES -> WHERE NEXT, and everything needed once in a lifetime (the id, the
- * entry, retries, variable copies, foreign keys) is folded into "More". The
- * section is set by the `group` field of a descriptor, the order by `GROUPS`;
- * "Next" is assembled by the inspector itself from the order ports of the node,
- * so a node kind does not have to duplicate next/then/else as separate fields.
+ * Sections follow how a node is thought about rather than the JSON: what it
+ * takes, what it gives, where it goes next, with rarely used things (id,
+ * entry, retries, copies) folded under "More". A descriptor's `group` picks
+ * the section, `GROUPS` orders them, and "Next" is built from the node's order
+ * ports.
  *
- * Everything is edited through forms — there is no hand-written JSON. The set
- * of fields comes from the node kind (kinds.js) as declarative descriptors:
- *   text / cel / number / check / select — scalar controls;
- *   node-ref — a dropdown of the nodes of the current graph;
- *   tags     — a list of strings as chips (entered comma-separated);
- *   rows     — a table editor of rows with columns of different types
- *              (text / number / select / node-ref / label);
- *   spec-args / spec-outputs — the inputs and outputs of a stage BY ITS SPEC: a
- *              row per declared argument (type, description, whether it is
- *              required), the source picked in words "variable / value /
- *              expression", the variable name out of those already in the graph;
- *   stage-spec  — the stage reference.
+ * Everything is a form. The fields come from the node kind (kinds.js) as
+ * descriptors:
+ *   text / cel / number / check / select   scalar controls
+ *   node-ref                               a dropdown of the graph's nodes
+ *   tags                                   a list of strings as chips
+ *   rows                                   a table with typed columns
+ *                                          (text / number / select / node-ref / label)
+ *   spec-args / spec-outputs               a stage's inputs and outputs by its
+ *                                          spec: one row per declared argument
+ *                                          with type, description and required
+ *                                          mark, the source picked from
+ *                                          variable / value / expression
+ *   stage-spec                             the stage's reference
  */
 import { varColor } from "./colors.js";
 import { variablesOf } from "./dataflow.js";
@@ -31,17 +30,16 @@ import {
   writeOutputRows,
 } from "./kinds.js";
 
-/** The panel sections top to bottom; `more` is drawn separately, collapsed. */
+/** Panel sections top to bottom; `more` is drawn separately, folded. */
 const GROUPS = [
   { key: "main", title: null },
   { key: "in", title: "group.in" },
   { key: "out", title: "group.out" },
 ];
 
-/** Human labels for the order ports, keyed by the stable port key: the JSON key
- * itself stays next to it, in small type. A kind can override one on the port
- * itself (`human`) where the shared word does not fit — the body of a loop is
- * not the body of a block. */
+/** Readable labels for order ports, by port key (the JSON key is shown beside
+ * it in small type). A port can override it with `human` where the shared
+ * word does not fit. */
 const PORT_LABELS = {
   next: "port.next", then: "port.then", else: "port.else",
   default: "port.default", body: "port.body",
@@ -56,19 +54,18 @@ function el(tag, className, text) {
 
 export class Inspector {
   #flushing = false; // a field is being committed — do not touch a nested render()
-  /** Unfinished rows of the table editors: `<node id>|<field label>` -> rows.
-   * They cannot be represented in JSON but must survive a redraw. */
+  /** Unfinished table rows, `<node id>|<field label>` -> rows. They cannot be
+   * stored in JSON but must survive a redraw. */
   #drafts = new Map();
-  /** The source picked by hand for a CEL field: `<node id>|<field label>` ->
-   * vars|const|cel. The JSON keeps only the expression, so the source is read
-   * back out of the text — and an empty field, or one holding `vars.count` on
-   * the way to `vars.count > 0`, reads as the wrong one. Without this, "value"
-   * and "expression" snapped back the moment they were picked. */
+  /** The source picked by hand for a CEL field, `<node id>|<field label>` ->
+   * vars|const|cel. The JSON holds only the expression, and text such as
+   * `vars.count` on the way to `vars.count > 0` would be read as the wrong
+   * source, so the choice is remembered. */
   #valueMode = new Map();
-  /** Whether the "how to assemble a graph" fold is open. The panel is rebuilt
-   * on every edit, and a <details> rebuilt is a <details> shut. */
+  /** Whether the "how to build a graph" fold is open; the panel is rebuilt on
+   * every edit and would close it. */
   #howToOpen = false;
-  /** The node whose form is open: the one its own links may not point at. */
+  /** The node whose form is open (its own links may not point at it). */
   #openNode = null;
 
   constructor(host, env) {
@@ -95,13 +92,10 @@ export class Inspector {
   }
 
   /**
-   * A text field that does not lose what was typed.
-   *
-   * `change` arrives on Enter and on losing focus — but the panel is often
-   * rebuilt EARLIER: a click on the canvas changes the selection, the field is
-   * removed from the DOM, and its `change` never arrives — what was typed is
-   * gone silently. So every field can commit itself on demand, and `render()`
-   * asks the field that holds the cursor to do so before rebuilding the panel.
+   * A text field that does not lose input. `change` fires on Enter or blur,
+   * but the panel is often rebuilt first (e.g. a click on the canvas changes
+   * the selection) and the event never comes. So each field can commit on
+   * demand, and `render()` asks the focused one to do so before rebuilding.
    */
   #bindInput(input, apply) {
     let dirty = false;
@@ -116,8 +110,8 @@ export class Inspector {
     return input;
   }
 
-  /** Commit the field under the cursor before the panel is rebuilt. The flag
-   * guards against recursion: writing to the model redraws the panel itself. */
+  /** Commit the focused field before a rebuild. The flag prevents recursion,
+   * since writing to the model redraws the panel. */
   #flushPending() {
     const active = document.activeElement;
     if (this.#flushing || !active?.__sfCommit || !this.host.contains(active)) return;
@@ -132,14 +126,9 @@ export class Inspector {
   // ------------------------------------------------------------ sections
 
   /**
-   * The panel with nothing selected: what this graph IS, not how to use the
-   * editor.
-   *
-   * It used to hold the whole catalogue of canvas gestures — eleven lines of
-   * instructions in the one place a reader has already stopped looking for
-   * instructions. They are still written down (a fold at the bottom), but the
-   * space belongs to the graph itself: where it starts and which variables run
-   * through it, which is the one thing the canvas cannot show on its own.
+   * The panel with nothing selected: an overview of the graph, where it starts
+   * and which variables run through it. The canvas gestures are in a fold at
+   * the bottom.
    */
   #renderOverview() {
     const { model } = this.env;
@@ -154,8 +143,7 @@ export class Inspector {
       graph: graphName, nodes: graph.nodes.length, edges,
     })));
 
-    // where the run begins: a button, because the entry node is the first one
-    // anybody looks for and hunting for it on the canvas is the wrong game
+    // the entry node as a button, since it is the first thing people look for
     const entry = el("p", "sf-muted sf-var-line");
     if (graph.entry && graph.nodes.some((n) => n.id === graph.entry)) {
       entry.append(t("panel.entryIs"), this.#nodeChip(graph.entry));
@@ -169,14 +157,9 @@ export class Inspector {
   }
 
   /**
-   * The variables of the graph: who writes each one and who reads it.
-   *
-   * The memory of StageFlow is a shared frame, so a variable is not a wire but
-   * a name — and on the canvas that name is scattered over as many card rows as
-   * there are nodes touching it. Gathered in one list it also shows the two
-   * mistakes nothing else catches: a variable nobody writes (the reader gets
-   * nothing) and one nobody reads (the write is dead weight). Neither is
-   * invalid JSON, so validation stays silent about both.
+   * The graph's variables: who writes and who reads each one. It also shows
+   * two mistakes validation cannot see: a variable nobody writes and one
+   * nobody reads.
    */
   #renderVarIndex(graph) {
     const index = new Map();
@@ -210,10 +193,8 @@ export class Inspector {
     this.host.append(list);
   }
 
-  /** One line of the index: the colour the wires of this name have on the
-   * canvas, the name, then its writers and readers. Hovering the line lights
-   * that variable's path on the canvas — the same highlight hovering a row on a
-   * card gives, from the other end. */
+  /** One index line: the variable's wire color, its name, its writers and
+   * readers. Hovering highlights its path on the canvas. */
   #varRow(name, { writers, readers }) {
     const row = el("div", "sf-var-item");
     row.dataset.var = name;
@@ -234,15 +215,15 @@ export class Inspector {
     return row;
   }
 
-  /** The missing half of a flow: a dash that says what is missing on hover.
-   * `bad` is for the half that is a mistake rather than merely empty. */
+  /** A dash for a missing writer or reader, explained on hover. `bad` marks
+   * the case that is a mistake rather than merely empty. */
   #varNone(title, bad = false) {
     const mark = el("span", bad ? "sf-var-none sf-var-bad" : "sf-var-none", "—");
     mark.title = title;
     return mark;
   }
 
-  /** A node name as a "show me this one" button. */
+  /** A node name as a button that selects it. */
   #nodeChip(id) {
     const chip = el("button", "sf-tag", id);
     chip.title = t("panel.showNode");
@@ -250,10 +231,9 @@ export class Inspector {
     return chip;
   }
 
-  /** The gestures of the canvas, folded away. They have to be written
-   * somewhere — nothing on the canvas says a wire can be pulled out of a port —
-   * but they are read once and are in the way ever after, so the fold stays
-   * closed until asked and remembers being opened across redraws. */
+  /** The canvas gestures, folded. Nothing on the canvas says a wire can be
+   * pulled from a port, so they are written down; the fold remembers being
+   * opened across redraws. */
   #renderHowTo() {
     const box = el("details", "sf-more sf-howto");
     box.open = this.#howToOpen;
@@ -261,9 +241,7 @@ export class Inspector {
     box.append(el("summary", "sf-section-title", t("panel.howTo")));
     box.append(el("p", "sf-muted", t("panel.legend")));
     const tips = el("ul", "sf-tips");
-    // as many tips as the catalog holds: a translation may merge two of them
-    // or add one, and neither should mean editing this loop. `has` rather than
-    // a miss of `t`, or the walk past the last one would warn in the console
+    // as many tips as the catalog has; `has` avoids a warning past the last one
     for (let n = 1; has(`panel.tip.${n}`); n += 1) {
       tips.append(el("li", "", t(`panel.tip.${n}`)));
     }
@@ -271,9 +249,8 @@ export class Inspector {
     this.host.append(box);
   }
 
-  /** A group selection: "five nodes" have no common form, so the panel shows
-   * what is in the group and what can be done with it. A click on a name
-   * narrows the selection to a single node — to its ordinary form. */
+  /** A multiple selection: the nodes in it and what can be done with them.
+   * Clicking a name selects just that node. */
   #renderNodes(sel) {
     this.host.append(el("h3", "", tn("panel.selected", sel.ids.length)));
     this.host.append(el("p", "sf-muted", t("panel.selected.about")));
@@ -308,8 +285,7 @@ export class Inspector {
     const kind = kindOf(node);
     const head = el("h3", "sf-kind-title");
     head.style.setProperty("--kind-color", kind.accent(node, this.env));
-    // the header is like the one on the card: the kind tile, then the node id
-    // and the stage — the panel is open for a particular node, not for its type
+    // the header matches the card: the kind tile, the node id and the stage
     const caption = el("span", "sf-kind-text");
     caption.append(
       el("span", "sf-kind-id", node.id),
@@ -355,8 +331,8 @@ export class Inspector {
     return box;
   }
 
-  /** "Next" — the simple order ports of a node (next / then / else / body...).
-   * List ports (branches, cases, except) live in their own editors. */
+  /** "Next": a node's single order ports (next / then / else / body ...). List
+   * ports (branches, cases, except) have their own editors. */
   #flowSection(node, kind) {
     const ports = kind.orderPorts(node).filter((port) => !port.add && !port.removeItem);
     if (!ports.length) return null;
@@ -376,7 +352,7 @@ export class Inspector {
     return this.#section(t("group.flow"), controls);
   }
 
-  /** "More" — what is rarely touched: the node name, entry, retries, copies. */
+  /** "More": rarely used fields (name, entry, retries, copies). */
   #moreSection(node, fields) {
     const box = el("details", "sf-more");
     box.append(el("summary", "sf-section-title", t("group.more")));
@@ -386,15 +362,10 @@ export class Inspector {
   }
 
   /**
-   * The nodes a link may point at: everything in the graph but the one whose
-   * form this is. A port pointing at its own node is a loop with no way out —
-   * the only node that runs between two visits is that node itself, so nothing
-   * can change the decision — and the canvas has always refused to draw such a
-   * wire. The panel used to offer it in a dropdown all the same.
-   *
-   * A value already stored stays in the list even when it is the node itself or
-   * a name the graph does not have: a `<select>` that cannot show what is in the
-   * JSON would say something other than the truth. Validation names both.
+   * The nodes a link may point at: all but this one, since a port pointing at
+   * its own node is a loop with no way out (the canvas refuses to draw it).
+   * A value already stored stays listed even if it is this node or missing,
+   * so the dropdown shows what the JSON says; validation reports both.
    */
   #targetIds(current) {
     const ids = this.env.model.graph.nodes
@@ -405,7 +376,7 @@ export class Inspector {
     return ["", ...ids];
   }
 
-  /** A dropdown of the graph nodes (an empty value means "not set"). */
+  /** A dropdown of the graph's nodes (empty means "not set"). */
   #nodeSelect(value, onChange) {
     const select = el("select");
     for (const id of this.#targetIds(value)) {
@@ -438,8 +409,8 @@ export class Inspector {
     const owner = graph.nodes.find((n) => n.type === "entry");
     const btn = el("button", "sf-btn", t(isEntry ? "panel.isEntry" : "panel.makeEntry"));
     btn.disabled = isEntry;
-    // the start of a graph is set by an entry node; making somebody else the
-    // entry point means getting an entry node nobody ever enters
+    // the start is set by an entry node; another entry point would leave the
+    // entry node unreachable
     if (!isEntry && owner) {
       btn.disabled = true;
       btn.title = t("panel.entryOwned", { node: owner.id });
@@ -503,25 +474,18 @@ export class Inspector {
   }
 
   /**
-   * A field whose JSON is a CEL expression, filled in the way a stage argument
-   * is: pick a source, then name a variable, type a value, or write the
-   * expression. The three sources are not three shapes in the JSON — the core
-   * evaluates these fields with CEL and nothing else — so `celSource` reads the
-   * source back out of the text and `celExpr` writes it in.
-   *
-   * Without this the only way to say "walk vars.tickets" was to type `vars.`
-   * by hand, and a plain list could not be said at all.
+   * A CEL field filled in like a stage argument: pick a source, then a
+   * variable, a value or an expression. The core only takes CEL here, so
+   * `celSource` reads the source back from the text and `celExpr` writes it.
    */
   #valueField(field) {
     const key = `${this.env.selection.current?.id ?? "-"}|${field.label}`;
     const text = String(field.get() ?? "");
     const read = celSource(text);
-    // the text decides what the source is — except that it cannot decide on its
-    // own while an expression is being typed (`vars.count` on the way to
-    // `vars.count > 0` reads as a bare variable). So a source picked by hand
-    // holds until the text stops fitting it; an expression fits any text and
-    // holds until it is changed back by hand. An empty field is not a source at
-    // all but "not set", exactly as an unfilled stage argument is
+    // the text decides the source, except while an expression is being typed
+    // (`vars.count` on the way to `vars.count > 0` looks like a variable). A
+    // source picked by hand holds until the text no longer fits it; an
+    // expression fits anything and holds until changed. Empty means not set
     const chosen = this.#valueMode.get(key);
     const source = text.trim()
       ? (chosen && (chosen === "cel" || chosen === read.source) ? chosen : read.source)
@@ -529,10 +493,8 @@ export class Inspector {
     const value = source === read.source ? read.value : text;
     const write = (mode, next) => {
       this.#valueMode.set(key, mode);
-      // a variable with no name yet is the field's own name — the same default a
-      // stage argument has (`parts ← parts`). Without it picking "variable"
-      // changed nothing visible: the card grew no port, and a port is what a
-      // wire is attached to
+      // a variable without a name defaults to the field's name, as a stage
+      // argument does (`parts ← parts`), so the card gets a port at once
       field.set((mode === "vars" && field.varName
         ? celVarRef(String(next ?? "").trim() || field.varName)
         : celExpr(mode, next)) || null);
@@ -559,16 +521,14 @@ export class Inspector {
         this.#touch();
         return;
       }
-      // switching TO an expression keeps what is written: `vars.x` is where
-      // `vars.x > 0` is usually typed from. The other way there is nothing to
-      // keep — an expression is not a name and not a value
+      // switching to an expression keeps the text (`vars.x` usually becomes
+      // `vars.x > 0`); switching away from one clears it
       write(select.value, select.value === "cel" ? text : "");
     };
     line.append(select);
 
     if (!source) {
-      // nothing to fill in yet — the picker is the whole control, as it is for
-      // a stage argument that has not been given a source
+      // nothing to fill in yet: the source picker is the whole control
     } else if (source === "vars") {
       line.append(this.#varInput(value, (name) => write("vars", name)));
     } else {
@@ -614,17 +574,12 @@ export class Inspector {
     return wrap;
   }
 
-  /** The generic table editor of lists (arguments, outputs, cases...). Edits go
-   * into the model on change; rows are added and removed with buttons.
+  /** The generic table editor (arguments, outputs, cases ...). Changes go to
+   * the model; rows are added and removed with buttons.
    *
-   * Unfinished rows live in the panel as DRAFTS rather than in the JSON.
-   * Otherwise "+ row" would not work at all: a row without a required field
-   * (a variable name, the `when` of a case, both ends of an `expose`) cannot be
-   * represented in JSON, so `field.set` dropped it, `touch()` redrew the panel
-   * from the JSON — and the click looked like "nothing happened". A draft
-   * survives a redraw, so the columns can be filled in any order; as soon as a
-   * row becomes complete it goes into the JSON and stops being a draft.
-   */
+   * Incomplete rows are kept as drafts in the panel: a row missing a required
+   * part cannot be stored in JSON, so without drafts "+ row" would vanish on
+   * the next redraw. A draft becomes JSON once it is complete. */
   #rowsEditor(field) {
     const wrap = el("details", "sf-rows");
     const key = `${this.env.selection.current?.id ?? "-"}|${field.label}`;
@@ -703,8 +658,7 @@ export class Inspector {
         datalist.append(opt);
       }
       input.setAttribute("list", listId);
-      // a fragment, not a wrapper: the input must stay a direct flex child of
-      // the row, or it stops stretching
+      // a fragment, not a wrapper, so the input stays a flex child and stretches
       const frag = document.createDocumentFragment();
       frag.append(input, datalist);
       return frag;
@@ -715,11 +669,9 @@ export class Inspector {
   // ------------------------------------- stage inputs and outputs by the spec
 
   /**
-   * The inputs of a stage: a row per argument DECLARED by the spec — with the
-   * type, the description and a mark of whether it is required. The user does
-   * not invent table rows but fills in what the stage said about itself. Keys
-   * that are not in the spec (someone else's pipeline, a stage without a
-   * docstring) are shown below as a separate group — nothing gets lost.
+   * A stage's inputs: one row per argument its spec declares, with type,
+   * description and whether it is required. Keys not in the spec (another
+   * pipeline, a stage without a docstring) are listed below, not dropped.
    */
   #specArgs(field) {
     const { node, spec } = field;
@@ -736,11 +688,9 @@ export class Inspector {
     const box = el("div", "sf-args");
     for (const arg of declared) box.append(this.#argRow(arg, byName.get(arg.name), write));
 
-    // `*` in a spec means "I accept any additional arguments" (that is how
-    // LogStage, TemplateStage and AssertStage are built). Without it a stage
-    // simply receives the extra argument and, if it does not read it, silently
-    // ignores it — which is legal, but it has to be said right in the row and
-    // not only in the group heading, which scrolls away
+    // `*` in a spec accepts extra arguments (LogStage, TemplateStage,
+    // AssertStage). Otherwise an extra argument is silently ignored, so say so
+    // in the row itself
     const acceptsExtra = (spec?.arguments ?? []).some((a) => a.name === "*");
     const extra = rows.filter((r) => !declared.some((a) => a.name === r.name));
     if (extra.length && declared.length) {
@@ -767,8 +717,7 @@ export class Inspector {
     return box;
   }
 
-  /** One input row: a header with the type, the description, the source and the
-   * value. */
+  /** One input row: type, description, source and value. */
   #argRow(arg, row, write, removable = false) {
     const required = arg.optional === false;
     const wrap = el("div", "sf-arg" + (required && !row ? " sf-arg-missing" : ""));
@@ -827,9 +776,9 @@ export class Inspector {
   }
 
   /**
-   * The outputs of a stage: a "save it" checkbox per declared result field plus
-   * the name of the variable it goes into. The unchecked fields are visible —
-   * so what the stage can hand over but is currently thrown away is visible too.
+   * A stage's outputs: a "keep" checkbox per declared result field and the
+   * variable it goes to. Unkept fields stay visible, showing what is
+   * discarded.
    */
   #specOutputs(field) {
     const { node, spec } = field;
@@ -878,11 +827,9 @@ export class Inspector {
       box.append(el("div", "sf-muted", t(spec ? "outs.none" : "args.noSpec")));
     }
 
-    // What a stage result consists of is determined by its code, a field cannot
-    // be invented — so when a stage has declared its outputs, the only lawful
-    // addition offered is a pipeline variable computed by an expression (a key
-    // with `.$`). If the stage says nothing about outputs (no docstring, or a
-    // declared `*`), the contract is unknown — then the field is typed by hand.
+    // a stage's result fields are fixed by its code, so with declared outputs
+    // the only addition offered is a computed variable (a `.$` key). Without a
+    // declaration (no docstring, or `*`) the field name is typed by hand
     const contractKnown = known.length && !known.includes("*");
     const add = el("button", "sf-btn sf-btn-small",
       t(contractKnown ? "outs.addExpr" : "outs.addField"));
@@ -921,13 +868,10 @@ export class Inspector {
     return wrap;
   }
 
-  /** An output that did not match a spec row: a CEL expression or a result
-   * field.
-   *
-   * An expression is a lawful case, it is not obliged to be in the spec. But a
-   * field the stage does not return is a guaranteed StageOutputError at run
-   * time, so the row turns red and says plainly what is wrong; the same text
-   * goes to the status bar as an error (see StageKind.validate). */
+  /** An output with no spec row: a CEL expression, or a result field. An
+   * expression is fine; a field the stage does not return would fail at run
+   * time (StageOutputError), so the row turns red and says why, as the status
+   * bar does (see StageKind.validate). */
   #outExtraRow(row, index, writeAt, known = []) {
     const unknownField = !row.cel && known.length && !known.includes(row.src)
       && !known.includes("*");
@@ -959,24 +903,21 @@ export class Inspector {
     return wrap;
   }
 
-  /** A variable name: an input with a list of the names already in the graph —
-   * the name is picked with the mouse, so a typo does not create a second
-   * variable. */
+  /** A variable name, with the graph's names offered so a typo does not
+   * create a second variable. */
   #varInput(value, onChange) {
     const input = el("input", "sf-var-input");
     input.value = value ?? "";
     input.placeholder = t("field.varName");
     if (value && this.env.secrets?.has(value)) {
-      // marked but not revealed: it is visible that a key rather than an
-      // ordinary variable is wired into the stage — and still not visible which
+      // marked as a key without revealing which
       input.classList.add("sf-var-secret");
       input.title = t("field.secretHint");
     }
     const list = el("datalist");
     list.id = `sf-vars-${Math.random().toString(36).slice(2, 8)}`;
-    // secrets are the same variables to the graph, so they stand in the same
-    // list: a key is wired into a stage BY NAME, and there is no point typing it
-    // by hand (with a typo half the time)
+    // secrets are variables to the graph, so they are offered too: a key is
+    // wired in by name
     const secretNames = this.env.secrets?.names() ?? [];
     for (const name of [...new Set([...variablesOf(this.env.model.graph), ...secretNames])].sort()) {
       const opt = el("option");
@@ -986,16 +927,15 @@ export class Inspector {
     }
     input.setAttribute("list", list.id);
     this.#bindInput(input, () => onChange(input.value.trim()));
-    // a fragment, not a wrapper: the input must stay a direct flex child of the
-    // row, or it stops stretching
+    // a fragment, not a wrapper, so the input stays a flex child and stretches
     const frag = document.createDocumentFragment();
     frag.append(input, list);
     return frag;
   }
 
-  /** Entering a literal argument value: a control by the type from the stage
-   * spec (a checkbox for bool, a number field for numbers), otherwise text with
-   * JSON parsing — so that a list and an object can be typed by hand too. */
+  /** A literal argument value: a control by the spec type (checkbox for bool,
+   * number field for numbers), otherwise text parsed as JSON so lists and
+   * objects can be typed. */
   #constInput(arg, row, write) {
     const type = (arg.type ?? "any").toLowerCase();
     const set = (value) => write(arg.name, { source: "const", value });
@@ -1020,8 +960,7 @@ export class Inspector {
     return input;
   }
 
-  /** The reference of the selected stage — data from the backend
-   * (StagesLibrary). */
+  /** The selected stage's reference, from the backend's specs. */
   #stageSpec(field) {
     const wrap = el("details", "sf-spec");
     wrap.append(el("summary", "sf-field-label", t("spec.title")));

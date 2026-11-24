@@ -1,28 +1,20 @@
 /**
- * Data flows: which node actually supplies a variable to the one that reads it.
+ * Data flow: which node supplies a variable to the node that reads it.
  *
- * There are no data links in the pipeline JSON — the memory of StageFlow is a
- * shared frame, a variable is not "a wire from A to B" but an entry in it.
- * The editor used to draw every writer × reader pair of one name, and on a
- * graph of a dozen nodes that produced a tangle: long curves across half the
- * canvas, most of them a lie. A lie because a reader sees NOT all the writes
- * but the last one that happened before it in execution order.
+ * The JSON has no data links: a variable is an entry in the shared frame, and
+ * a reader sees the last write before it in execution order, not every write.
+ * So for each read the nearest writers are found by walking the order graph
+ * backwards from the reader, stopping at the first writer on each path.
+ * Branches can give several.
  *
- * That is what is computed here: for every read we look for the NEAREST
- * writers — a backwards walk over the order graph from the reader that stops
- * at the first writer of that variable it meets. Branching gives several
- * nearest ones (one per path) — which is honest: on different paths the value
- * arrives from different nodes.
- *
- * A writer with no path to the reader in execution order (the graph is not
- * assembled yet, or the node is detached) is not discarded — the link is
- * marked `ordered: false` and drawn dashed: "the names match, but the order is
- * undefined".
+ * A writer with no path to the reader (an unfinished or detached graph) is
+ * kept as `ordered: false` and drawn dashed: the names match, the order is
+ * undefined.
  */
 import { kindOf } from "./kinds.js";
 import { computeRegions } from "./regions.js";
 
-/** Write ports by variable: name -> [{id, index}] (one per node). */
+/** Write ports by variable: name -> [{id, index}], one per node. */
 function writerPorts(graph) {
   const byVar = new Map();
   for (const node of graph.nodes) {
@@ -36,16 +28,12 @@ function writerPorts(graph) {
 }
 
 /**
- * The order edges of the graph: node -> whom it can hand control to.
+ * Order edges: node -> the nodes it can pass control to.
  *
- * Besides the edges from the JSON this counts the IMPLICIT transitions:
- * leaving an area (`parallel` — branches merging, `try` and `map` — the body
- * finishing) leads into the owner's `next`, even though there is no such edge
- * in the pipeline. Without them the last node of a branch would not count as
- * an ancestor of whoever reads its variable after the merge.
- *
- * Auto-layout uses the same graph: if a writer lies on the path to a reader,
- * the wire already goes top to bottom.
+ * Includes the implicit edges out of a region: when `parallel` branches merge
+ * or a `try`/`map` body finishes, control goes to the owner's `next`. Without
+ * them the last node of a branch would not count as upstream of a read after
+ * the merge. Auto-layout uses the same graph.
  */
 export function controlSuccessors(graph) {
   const byId = new Map(graph.nodes.map((n) => [n.id, n]));
@@ -65,7 +53,7 @@ export function controlSuccessors(graph) {
     if (!next || !succs.has(next)) continue;
     for (const id of region.members) {
       const node = byId.get(id);
-      // the tail of an area — the one after which control leaves it
+      // the last node of a region, where control leaves it
       if (node && !targetsOf(node).some((t) => region.members.has(t))) {
         succs.get(id).add(next);
       }
@@ -74,7 +62,7 @@ export function controlSuccessors(graph) {
   return succs;
 }
 
-/** Reversed order edges: node -> who can hand control to it. */
+/** Reversed order edges: node -> the nodes that can pass control to it. */
 function predecessors(graph) {
   const preds = new Map(graph.nodes.map((n) => [n.id, []]));
   for (const [id, targets] of controlSuccessors(graph)) {
@@ -84,9 +72,8 @@ function predecessors(graph) {
 }
 
 /**
- * The nearest writers of a variable upstream: a breadth-first walk backwards
- * that does not pass THROUGH a writer — that one shadows everything before it
- * with its own write.
+ * The nearest upstream writers of a variable: a backwards breadth-first walk
+ * that stops at each writer, since a write hides everything before it.
  */
 function nearestWriters(readerId, writers, preds) {
   const byId = new Map(writers.map((w) => [w.id, w]));
@@ -108,10 +95,8 @@ function nearestWriters(readerId, writers, preds) {
 }
 
 /**
- * The data links of the current graph:
- * `[{name, writerId, outIndex, readerId, inIndex, ordered}]`.
- * The port indices are the same ones the canvas uses to compute attachment
- * points.
+ * The data links of a graph: `[{name, writerId, outIndex, readerId, inIndex,
+ * ordered}]`, with the port indices the canvas uses.
  */
 export function dataLinks(graph) {
   const byVar = writerPorts(graph);
@@ -144,10 +129,8 @@ export function dataLinks(graph) {
 }
 
 /**
- * The variable names occurring in the graph: both written and read. The
- * inspector offers them when a variable is picked — the name is chosen with
- * the mouse rather than typed, so a typo does not silently create a second
- * variable.
+ * Every variable name the graph writes or reads. The inspector offers them
+ * for picking, so a typo does not create a second variable.
  */
 export function variablesOf(graph) {
   const seen = new Set();
@@ -161,7 +144,7 @@ export function variablesOf(graph) {
   return [...seen].sort();
 }
 
-/** Data links folded for auto-layout: reader -> Set(writers). */
+/** Data links grouped for auto-layout: reader -> Set(writers). */
 export function writersOf(graph) {
   const map = new Map(graph.nodes.map((n) => [n.id, new Set()]));
   for (const link of dataLinks(graph)) map.get(link.readerId)?.add(link.writerId);

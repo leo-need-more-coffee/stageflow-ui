@@ -1,30 +1,17 @@
 /**
- * A popup menu: a list of actions with a search and keyboard control.
+ * A popup menu: actions with search and keyboard control.
  *
- * The same menu is opened both by the canvas ("what to create here") and by the
- * toolbar menu bar ("File", "Edit", "View", "Run") — deliberately the same one:
- * a dropdown built from a different set of primitives would look foreign in
- * this interface. Hence `shortcut` in the items (the hotkey on the right),
- * `checked` (a tick for toggles), `disabled`, and separators with group
- * headings.
+ * Used by the canvas ("what to create here") and by the menu bar ("File",
+ * "Edit", ...), so items support `shortcut`, `checked` (a tick for toggles),
+ * `disabled`, separators and headings.
  *
- * It is needed where the choice happens UNDER THE CURSOR and continues a
- * movement already begun: a wire dropped into the void — "what to create here";
- * a variable dropped on a node — "where to connect it". That is why the menu
- * opens at the point of the event rather than in a corner of a panel, and the
- * very first character goes into the search: the hand does not leave the place
- * where the button was just released.
+ * On the canvas it opens where the gesture ended (a wire dropped on empty
+ * space, a variable dropped on a node) and typing goes straight into the
+ * search. Enter takes the first match, arrows move, Esc closes.
  *
- * The stage registry is long, so a list with a search is not decoration:
- * without it "create a node from here" would mean scrolling half a screen.
- * Enter takes the first match, the arrows walk the list, Esc closes it.
- *
- * The keyboard behaves as it does in a menu: the arrows SKIP separators,
- * headings and disabled items (otherwise the list stops at the first separator
- * and goes no further), and left/right move to the neighbouring section of the
- * menu bar. Focus is held by the menu root rather than by the first button: the
- * first item may be disabled, and the browser will not let such a button take
- * focus — so the keyboard would die before it started.
+ * Arrows skip separators, headings and disabled items; left/right move to the
+ * neighbouring menu-bar section. Focus is on the menu root, because the first
+ * item may be disabled and a disabled button cannot take focus.
  */
 import { paintIcon } from "./icons.js";
 import { t } from "./i18n.js";
@@ -43,16 +30,15 @@ export class Menu {
 
   /**
    * @param host   an element with `position: relative` (the canvas)
-   * @param opts   {x, y} — the client coordinates of the event;
-   *               title, hint — the header; search — show the search box;
-   *               items — [{label, hint, shortcut, icon, iconMono, color,
-   *                         keywords, checked, disabled, separator, heading,
-   *                         apply}];
-   *               closeOnOutside — close on a click outside (the menu bar);
-   *               anchor — the button that opened the menu: a click on it does
-   *               not count as "outside", otherwise the menu would close and
-   *               open again on one press;
-   *               onSide(±1) — move to the neighbouring section with the arrows
+   * @param opts   {x, y}: client coordinates of the event;
+   *               title, hint: the header; search: show the search box;
+   *               items: [{label, hint, shortcut, icon, iconMono, color,
+   *                        keywords, checked, disabled, separator, heading,
+   *                        apply}];
+   *               closeOnOutside: close on a click outside (the menu bar);
+   *               anchor: the button that opened it, which does not count as
+   *               outside, or one press would close and reopen it;
+   *               onSide(±1): move to the neighbouring section
    */
   constructor(host, {
     x, y, title, hint, items, search = false, onClose,
@@ -92,8 +78,7 @@ export class Menu {
         if (this.root.contains(e.target) || this.anchor?.contains(e.target)) return;
         this.close();
       };
-      // capture: otherwise a click on the button of another menu would manage
-      // to open that one first
+      // capture phase, so another menu's button does not open first
       document.addEventListener("pointerdown", this.#outside, true);
     }
   }
@@ -105,13 +90,9 @@ export class Menu {
   }
 
   /**
-   * Replace the items without closing the menu.
-   *
-   * The toolbar is redrawn on every change — and during a run the events come
-   * in batches — so an open section would otherwise either slam shut under the
-   * hand or show a state that no longer exists ("Step" disabled while the
-   * session is already standing on a node). The position in the list is kept:
-   * the cursor must not jump to the first item because a run ticked somewhere.
+   * Replace the items without closing the menu. The toolbar is redrawn on
+   * every change (often during a run), and an open section should neither
+   * close nor show stale state. The position in the list is kept.
    */
   setItems(items) {
     const active = this.#active;
@@ -123,18 +104,17 @@ export class Menu {
     this.#place();
   }
 
-  /** A redrawn toolbar means new buttons: the old anchor belongs to nobody. */
+  /** After a toolbar redraw the old anchor button is gone. */
   setAnchor(anchor) { this.anchor = anchor; }
 
-  /** Items you cannot stop on: decoration and disabled ones. */
+  /** Items that cannot be selected: decoration and disabled ones. */
   #inert(item) {
     return !item || item.separator || item.heading || item.disabled;
   }
 
-  /** A match by label, hint and extra keywords (the category). */
+  /** Match by label, hint and keywords (e.g. the category). */
   #match(item, query) {
-    // separators and group headings disappear while searching: the groups are
-    // no longer the same
+    // separators and headings are hidden while searching
     if (item.separator || item.heading) return !query;
     if (!query) return true;
     return `${item.label} ${item.hint ?? ""} ${item.keywords ?? ""}`
@@ -151,9 +131,8 @@ export class Menu {
       this.listEl.append(el("div", "sf-menu-empty", "nothing found"));
       return;
     }
-    // the tick takes up room in EVERY item of a menu that has at least one
-    // toggle: otherwise the labels would jump horizontally both when a tick is
-    // switched on and simply when moving from group to group
+    // if any item is a toggle, every item reserves room for the tick, so
+    // labels do not shift
     const withChecks = this.all.some((item) => item.checked !== undefined);
 
     this.#items.forEach((item, index) => {
@@ -195,8 +174,7 @@ export class Menu {
     });
   }
 
-  /** The next item you can stand on: separators, headings and disabled entries
-   * are stepped over, or the list would stop at the very first one. */
+  /** The next selectable item, skipping separators, headings and disabled ones. */
   #step(delta) {
     const count = this.#items.length;
     if (!count) return;
@@ -223,8 +201,7 @@ export class Menu {
       e.preventDefault();
       this.#step(steps[e.key]);
     } else if (this.onSide && e.key in sides) {
-      // in a menu bar the neighbouring section is a step sideways, not a
-      // "close and open"
+      // in the menu bar, sideways moves to the neighbouring section
       e.preventDefault();
       this.onSide(sides[e.key]);
     } else if (e.key === "Enter" || e.key === " ") {
@@ -235,14 +212,12 @@ export class Menu {
       e.stopPropagation();
       const anchor = this.anchor;
       this.close();
-      // focus goes back to the section button: otherwise Esc would cut off
-      // keyboard work and the mouse would have to be picked up again
+      // return focus to the section button so the keyboard keeps working
       anchor?.focus?.();
     }
   }
 
-  /** Puts the menu at the point of the event and tucks it inside the canvas if
-   * it does not fit: a menu half off the edge cannot be chosen from. */
+  /** Place the menu at the event, moved inside the canvas if it would not fit. */
   #place() {
     const host = this.host.getBoundingClientRect();
     const size = this.root.getBoundingClientRect();

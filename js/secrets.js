@@ -1,41 +1,30 @@
 /**
- * The secret store: API keys and everything else a pipeline needs at run time
- * but that must be neither in the pipeline JSON nor on the screen.
+ * The secret store: API keys and other values a run needs that must not be in
+ * the pipeline JSON or on screen.
  *
- * Why a separate place rather than an ordinary variable of the `entry` node. A
- * pipeline is a document: it gets exported, shown at a defence, committed to a
- * repository and opened in someone else's editor. A key written as a value into
- * `entry.variables` travels with it to all of those places at once, and
- * "remove it before sending" is exactly the operation people forget. So the key
- * is kept SEPARATELY from the graph, and the graph refers to it by name only:
- * `arguments.vars` of a stage reads `OPENAI_API_KEY` like any other variable —
- * the name goes into the JSON, the value is substituted at start.
+ * A pipeline is a document that gets exported, shared and committed, so a key
+ * typed into `entry.variables` would travel with it. Instead keys are kept
+ * apart and the graph refers to them by name: a stage's `arguments.vars` reads
+ * `OPENAI_API_KEY` like any variable, and the value is supplied at start.
  *
- * Two sources, and the difference between them matters:
+ * Two sources:
+ *   - `local`: typed into the editor and kept in this browser's
+ *     `localStorage`; the value is sent to the backend in the starting frame.
+ *   - `env`: the backend's own environment (`SF_SECRETS`, `SF_SECRET_*`); the
+ *     browser only gets the names and the backend substitutes the values.
  *
- *   - `local` — typed into the editor, lives in the `localStorage` of this
- *     browser. The value is known to the tab and goes to the run server in the
- *     starting frame.
- *   - `env` — the environment variables of the server itself (`SF_SECRETS`,
- *     `SF_SECRET_*`). The browser receives NAMES only: the value is substituted
- *     on the server before the start and never reaches the page at all.
+ * This is not encryption: `localStorage` is readable by extensions and
+ * devtools. It keeps keys out of documents, screenshots and logs, which is why
+ * a saved value is never shown again, only replaced or deleted. Real secrets
+ * belong in `env`.
  *
- * What this does NOT do — and does not pretend to: it is not encryption.
- * `localStorage` is readable by browser extensions and devtools, and the store
- * protects not against someone who already has access to the machine but
- * against the key spreading through documents, screenshots and logs. That is
- * why a value, once saved, is never shown again (not in the list, not in the
- * debug panel, not in the event log) — it can only be replaced or deleted. For
- * a real secret the place is the `env` source.
- *
- * One mask of one length for all: "••••••••" instead of a value does not even
- * give away whether the key is long or short.
+ * Every value is masked the same way, so the mask does not reveal its length.
  */
 import { readJson, removeKey, writeJson } from "./storage.js";
 
 export const SECRET_MASK = "••••••••";
 
-/** A secret name is a variable name: letters, digits, underscore. */
+/** A secret name is a variable name: letters, digits and underscores. */
 export function validSecretName(name) {
   return /^[A-Za-z_][A-Za-z0-9_]*$/.test(name);
 }
@@ -44,8 +33,8 @@ export class SecretStore extends EventTarget {
   #local = new Map(); // name -> value (known to this tab only)
   #env = [];          // names from the server environment; no values here
 
-  /** @param key the editor session key; secrets live next to it but apart —
-   * so that exporting and importing the state does not drag them along */
+  /** @param key the editor's storage key; secrets are stored under their own
+   * key so that exporting the editor state does not include them */
   constructor(key) {
     super();
     this.storageKey = key ? `${key}:secrets` : null;
@@ -57,7 +46,7 @@ export class SecretStore extends EventTarget {
     }
   }
 
-  /** Every known name: both local and server-side. */
+  /** Every known name, local and server-side. */
   names() {
     return [...new Set([...this.#local.keys(), ...this.#env])].sort();
   }
@@ -66,7 +55,7 @@ export class SecretStore extends EventTarget {
 
   has(name) { return this.#local.has(name) || this.#env.includes(name); }
 
-  /** "local" | "env" | null — the source of the value. */
+  /** "local" | "env" | null: where the value comes from. */
   sourceOf(name) {
     if (this.#local.has(name)) return "local";
     return this.#env.includes(name) ? "env" : null;
@@ -86,20 +75,16 @@ export class SecretStore extends EventTarget {
   }
 
   /**
-   * What goes to the run of this particular pipeline.
+   * What to send with a run of this pipeline.
    *
-   * A key is substituted ONLY if the graph mentions its name at all: otherwise
-   * every run would carry the whole keyring along and put it into the frame,
-   * where it would lie in plain view of the debugger. The sign is the name
-   * occurring in the pipeline JSON: that catches `arguments.vars`, a name
-   * inside a CEL expression (`vars.OPENAI_API_KEY`), and any other reference
-   * whatever node introduced it. Crude, but without false "did not send": a key
-   * that was not sent is a failed run.
+   * A key is included only if its name occurs in the pipeline JSON (in
+   * `arguments.vars`, in a CEL expression, anywhere), so a run does not carry
+   * every key into its frame. Crude, but it never leaves out a key the graph
+   * uses.
    *
-   * @returns {{vars, env, names}} — `vars` the local values, `env` the names to
-   * be substituted on the server, `names` every secret name: by them the server
-   * scrubs values out of the events, so that a key does not come back to the
-   * browser through the debug log.
+   * @returns {{vars, env, names}}: `vars` the local values, `env` the names the
+   * backend substitutes, `names` every secret name, which the backend uses to
+   * mask values in the events.
    */
   forRun(pipeline) {
     const text = JSON.stringify(pipeline ?? {});
@@ -112,11 +97,8 @@ export class SecretStore extends EventTarget {
   }
 
   /**
-   * The names of the secrets from the server environment (`GET /api/secrets`).
-   *
-   * Silently does nothing if there is no server or it cannot do that: the
-   * editor is also opened over static files, and the store must work there too
-   * — just without the server source.
+   * Load the names of the backend's environment secrets (`GET
+   * /api/secrets`). Does nothing if the backend has no such endpoint.
    */
   async loadEnv(url = "/api/secrets", fetcher = fetch) {
     try {
@@ -132,9 +114,8 @@ export class SecretStore extends EventTarget {
     }
   }
 
-  /** Hides secret values in arbitrary frame data: the value of a secret
-   * variable is not shown even to its owner — there is no point in showing it,
-   * and there may well be someone looking over the shoulder. */
+  /** Mask secret values in frame data. Nobody needs to see them, and someone
+   * may be looking over your shoulder. */
   maskVars(vars) {
     const out = {};
     for (const [name, value] of Object.entries(vars ?? {})) {

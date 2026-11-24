@@ -1,24 +1,16 @@
 /**
  * The connection screen: which backend this editor talks to.
  *
- * The editor is static front-end — it holds no stage registry and executes
- * nothing (see `backend.js`). So the first question it has to ask is the
- * address, and it has to ask it before the canvas appears: an editor with an
- * empty palette and a dead "Run" would look broken rather than unconfigured.
+ * The editor has no stages and runs nothing (see `backend.js`), so it asks for
+ * the address before showing the canvas; an empty palette would look broken.
  *
- * The address is checked by the very request the editor cannot work without
- * (`GET /api/stages`), so "connected" means the thing really answers and
- * really allows this origin — not that the string looks like a URL. A checked
- * address is remembered, so the question is asked once rather than on every
- * reload.
+ * The address is checked with `GET /api/stages`, the request the editor needs
+ * anyway, so "connected" means the backend answers and allows this origin. A
+ * working address is remembered.
  *
- * A backend serving more than one tenant wants to know who is calling, so the
- * screen also takes a header — NAME and value both, because the editor has no
- * business deciding that a credential is called `Authorization` and looks like
- * `Bearer …`. It authenticates nothing itself: it carries what it is given and
- * reports what came back. The check is the same request, so a credential that
- * is wrong is wrong here, on the screen where it can be corrected, rather than
- * at the first run.
+ * The screen also takes a credential header, name and value, since backends
+ * differ in what they call it. The editor only sends it; a wrong one shows up
+ * here, by the same check, rather than at the first run.
  */
 import { pieces, t, tn } from "./i18n.js";
 import { VERSION } from "./version.js";
@@ -37,14 +29,9 @@ function el(tag, className, text) {
 }
 
 /**
- * The credentials, by the address of the backend each one was given for.
- *
- * Kept per address rather than one for the editor, and that is the point: a
- * token typed for one backend is sent to that backend and to no other. With a
- * single remembered credential, a link with `?backend=` pointing somewhere
- * else made the editor present the token there on load, before anybody had
- * clicked anything. A remembered credential from before (one `auth` beside
- * the `url`) is read as belonging to that url, which is where it was used.
+ * Credentials by backend address, so a token is only ever sent to the backend
+ * it was typed for (a `?backend=` link to another address does not get it).
+ * An older single remembered `auth` is read as belonging to its `url`.
  */
 function credentialsOf(saved) {
   const out = {};
@@ -63,16 +50,13 @@ function credentialsOf(saved) {
 }
 
 /**
- * What was remembered: the address of the last backend that answered, which
- * plan was being looked at, and the credential for `url` — the given one, or
- * that last address when none is given. Only ever the credential that
- * belongs to the address asked about.
+ * What was remembered: the last backend that answered, the plan being viewed,
+ * and the credential for `url` (or for that last address if none is given).
  *
- * The credential goes into `localStorage` beside the editor's other secrets
- * and with the same caveat as those (see `secrets.js`): it is not encryption,
- * it protects against a token spreading through exported files and
- * screenshots, not against someone at the keyboard. The alternative — asking
- * for it on every reload — is what makes people paste tokens into the graph.
+ * The credential is kept in `localStorage` with the same caveat as secrets
+ * (see `secrets.js`): it keeps tokens out of exports and screenshots, it is
+ * not encryption. Asking on every reload would only push people to paste
+ * tokens into the graph.
  */
 export function storedBackend(storageKey, url = undefined) {
   const saved = readJson(backendStorageKey(storageKey)) ?? {};
@@ -85,7 +69,7 @@ export function storedBackend(storageKey, url = undefined) {
   };
 }
 
-/** What the editor remembers about a backend; one writer, one shape. */
+/** Remember a backend; the one place that writes this record. */
 export function rememberBackend(storageKey, { url, auth, plan }) {
   const key = backendStorageKey(storageKey);
   if (!key) return;
@@ -101,18 +85,17 @@ export function rememberBackend(storageKey, { url, auth, plan }) {
 }
 
 /**
- * Asks for the backend and returns it once it has answered.
+ * Ask for the backend and return it once it has answered.
  *
- * @param storageKey where to remember the address (the editor's session key)
- * @param url        an address to try before asking (an option, a query
- *                   parameter); `""` means "ask right away"
- * @param plan       which plan to be shown (`?plan=` on the editor's own URL)
- * @param force      show the screen even if the remembered address answers —
- *                   that is "change the backend" from the menu
- * @param onCancel   makes the screen cancellable (the menu, where there is
- *                   something to go back to); without it there is no way out,
- *                   because there is nothing behind the screen yet
- * @returns {Promise<Backend|null>} null only when a cancellable screen was cancelled
+ * @param storageKey where to remember it (the editor's storage key)
+ * @param url        an address to try first (an option or query parameter);
+ *                   `""` asks right away
+ * @param plan       the plan to view (`?plan=` on the editor's URL)
+ * @param force      show the screen even if the remembered address works
+ *                   ("change backend" in the menu)
+ * @param onCancel   makes the screen cancellable; without it there is nothing
+ *                   to go back to
+ * @returns {Promise<Backend|null>} null only if a cancellable screen was cancelled
  */
 export function connectBackend({
   storageKey = null, url = null, plan = null, force = false, onCancel = null,
@@ -120,7 +103,7 @@ export function connectBackend({
   const remembered = storedBackend(storageKey);
   const first = normalizeBackendUrl(url ?? "") || (force ? "" : remembered.url);
   const shownPlan = plan ?? remembered.plan;
-  // the credential of the address about to be tried — never another one's
+  // only ever the credential stored for this address
   const credentialFor = (address) => storedBackend(storageKey, address).auth;
   const initial = credentialFor(first || remembered.url);
 
@@ -148,11 +131,8 @@ export function connectBackend({
     form.append(input, button);
     box.append(form);
 
-    // The credential, folded away: most backends want none, and a field
-    // demanding one on the first screen reads as "you need an account".
-    // Folded OPEN when there already is one, so that a token that stopped
-    // working is visible where it is corrected rather than hidden behind a
-    // triangle.
+    // The credential section is folded, since most backends need none, but
+    // open when one is stored, so a token that stopped working is visible
     const auth = el("details", "sf-connect-auth");
     auth.open = Boolean(initial.value);
     const summary = el("summary", "", t("conn.auth"));
@@ -169,8 +149,7 @@ export function connectBackend({
     headerInput.placeholder = DEFAULT_AUTH_HEADER;
     headerInput.value = initial.header;
     const valueInput = el("input", "sf-connect-input");
-    // a password field so that a token is not on screen in a demonstration;
-    // pasting into one works, and reading it back is not what it is for
+    // a password field keeps the token off screen during a demo; pasting works
     valueInput.type = "password";
     valueInput.name = "auth-value";
     valueInput.spellcheck = false;
@@ -187,8 +166,8 @@ export function connectBackend({
     box.append(status);
 
     const note = el("div", "sf-connect-note");
-    // one sentence with a command and a link inside it: `pieces` keeps it one
-    // entry, so a translation can put them where its own grammar wants them
+    // one sentence with a command and a link: `pieces` keeps it one entry so a
+    // translation can order the parts
     const inside = {
       command: () => el("code", "", "python main.py"),
       repo: () => Object.assign(el("a", "", "stageflow-example"), {
@@ -242,13 +221,12 @@ export function connectBackend({
         resolve(backend);
         return;
       } catch (err) {
-        // a remembered address that stopped answering is not an error of the
-        // user's making, so the first, silent attempt says it plainly
+        // a remembered address that stopped answering is not the user's
+        // mistake, so say it plainly
         say(silent
           ? t("connect.silentFail", { address, reason: err.message })
           : t("connect.fail", { address, reason: err.message }), "bad");
-        // a refusal is the one failure with a cure on this screen: unfold the
-        // field rather than leave the answer behind a triangle
+        // a refused credential can be fixed here: open its section
         if (/credential|HTTP 40[13]/i.test(err.message)) {
           auth.open = true;
           valueInput.focus();
@@ -269,8 +247,7 @@ export function connectBackend({
       attempt(input.value);
     };
 
-    // a different address means a different credential: what is in the
-    // fields follows the address until somebody types into them
+    // the credential fields follow the address until the user types into them
     let typedCredential = false;
     headerInput.addEventListener("input", () => { typedCredential = true; });
     valueInput.addEventListener("input", () => { typedCredential = true; });

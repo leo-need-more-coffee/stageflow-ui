@@ -1,49 +1,29 @@
 /**
  * The backend the editor talks to.
  *
- * The editor holds no stage registry and executes nothing: the stage specs,
- * the secret names and the run API all live on a StageFlow backend, and which
- * one that is the user says on the connection screen (`connect.js`). So the
- * address is not a build-time constant but a value — this class is where it
- * turns into the URLs of the endpoints.
+ * Stage specs, secret names and the run API all live on a StageFlow backend
+ * chosen on the connection screen (`connect.js`); this class turns its address
+ * into endpoint URLs. The example backend is
+ * github.com/leo-need-more-coffee/stageflow-example; any server with the same
+ * endpoints works. `/api/meta` is optional (see `capabilities.js`).
  *
- * An example backend lives in a repository of its own
- * (github.com/leo-need-more-coffee/stageflow-example); anything answering the
- * same seven endpoints will do. An eighth, `/api/meta`, is optional: it says
- * which node types that backend's core can run, and without it the editor
- * simply knows less (see `capabilities.js`).
- *
- * Two things travel with every request and both are settings, not constants:
- *
- *   - **headers**. A backend serving more than one tenant wants to know who
- *     is calling, and the editor has no opinion about how: the header NAME is
- *     configurable alongside its value, because `Authorization: Bearer …`,
- *     `X-Api-Key: …` and whatever a gateway put there are all real. The
- *     editor authenticates nothing itself — it carries what it was given.
- *   - **language**. The stage specs are prose, and that prose is the backend's
- *     to translate: the editor's own catalog knows nothing about a host's
- *     stages. So the language the editor is drawn in travels as
- *     `Accept-Language`, and a backend that negotiates it answers in it.
- *   - **plan**. What the editor should draw and validate against, sent as
- *     `?plan=` on the two questions asked before a run. A backend that serves
- *     plans answers about that one instead of the caller's own, which is what
- *     makes "what would this graph look like on the cheaper tier" a question
- *     the editor can ask. It is a request to be SHOWN something: what a run
- *     is actually allowed is the backend's business and is decided there.
+ * Sent with every request:
+ *   - a credential header, name and value both configurable, since backends
+ *     differ (`Authorization: Bearer …`, `X-Api-Key`, ...); the editor only
+ *     carries it;
+ *   - `Accept-Language`, so a backend can translate its stage specs;
+ *   - `?plan=` on the two pre-run questions, to see what another plan allows.
+ *     It only changes what is shown; what a run may do is decided by the
+ *     backend.
  */
 import { FALLBACK, locale, t } from "./i18n.js";
 
 /**
- * Brings a typed address to a shape that can be pasted into a URL.
+ * Normalise a typed address. `localhost:8765`, `http://localhost:8765/` and
+ * `http://localhost:8765/api` are the same backend: `http://` is added when
+ * there is no scheme, and a trailing slash or `/api` is removed.
  *
- * People type `localhost:8765`, `http://localhost:8765/` and
- * `http://localhost:8765/api` interchangeably, and all three mean the same
- * backend. Without a scheme `http://` is added — an editor served over plain
- * http cannot fetch https from localhost anyway, and a bare host is what gets
- * typed; a trailing slash and a trailing `/api` are cut off, or the endpoints
- * would come out as `…/api/api/stages`.
- *
- * @returns {string} the normalised address, or "" if there is nothing to normalise
+ * @returns {string} the normalised address, or "" for empty input
  */
 export function normalizeBackendUrl(raw) {
   let text = String(raw ?? "").trim();
@@ -64,9 +44,9 @@ export const DEFAULT_AUTH_HEADER = "Authorization";
 
 export class Backend {
   /**
-   * @param url  the address of the backend; normalised on the way in
-   * @param auth `{header, value}` — the credential, editable in the UI
-   * @param plan which plan to be shown, or null for the caller's own
+   * @param url  the backend's address, normalised here
+   * @param auth `{header, value}`: the credential, editable in the UI
+   * @param plan the plan to view, or null for the caller's own
    */
   constructor(url, { auth = null, plan = null } = {}) {
     this.url = normalizeBackendUrl(url);
@@ -76,14 +56,8 @@ export class Backend {
   }
 
   /**
-   * The credential as the interface edits it: one header, name and value.
-   *
-   * A pair rather than a free-form header map because that is what a person
-   * types into two fields, and because the thing that has to be changeable
-   * at any moment — a token that expired halfway through an afternoon — is
-   * exactly this one. Naming the header covers the backends that disagree
-   * about what a credential is called, which was the whole requirement;
-   * carrying several at once was never one.
+   * The credential as one header, name and value: what a person types into
+   * two fields, and changeable at any time (tokens expire).
    */
   setAuth(auth) {
     const header = String(auth?.header ?? "").trim() || DEFAULT_AUTH_HEADER;
@@ -92,22 +66,22 @@ export class Backend {
     return this;
   }
 
-  /** Whether there is a credential at all — for "the editor sends nothing". */
+  /** Whether a credential is set. */
   get authenticated() { return Boolean(this.auth.value); }
 
   get headers() {
     return cleanHeaders({ [this.auth.header]: this.auth.value });
   }
 
-  /** The same backend seen as another plan — the editor swaps this in live. */
+  /** View the same backend as another plan; swapped in live. */
   setPlan(plan) {
     this.plan = plan || null;
     return this;
   }
 
-  /** `?plan=` goes on the two questions asked BEFORE a run and on no others:
-   * a run takes its plan from the credential, and sending it one would be
-   * offering the tenant a say in its own ceiling. */
+  /** `?plan=` is added only to the pre-run questions. A run takes its plan
+   * from the credential; letting a tenant send one would let it pick its own
+   * limits. */
   #shown(path) {
     return this.plan ? `${path}?plan=${encodeURIComponent(this.plan)}` : path;
   }
@@ -121,13 +95,9 @@ export class Backend {
   get metaUrl() { return this.#shown(`${this.url}/api/meta`); }
 
   /**
-   * `fetch` with the headers of this backend on it.
-   *
-   * Everything that talks to the backend goes through here — the stage
-   * registry, the secret names, the run API, the event stream — so that
-   * "where does the credential get attached" has one answer. Anything that
-   * reaches for the global `fetch` with a URL from this object is a request
-   * that will start failing the day the backend wants a token.
+   * `fetch` with this backend's headers. Every request to the backend (stages,
+   * secrets, runs, the event stream) goes through here, so the credential is
+   * attached in one place.
    */
   fetch(url, init = {}) {
     return fetch(url, {
@@ -142,13 +112,10 @@ export class Backend {
 
   /**
    * What the backend can run: `{api, stageflow, node_types, stages}`.
+   * Optional: a backend without it answers 404, which is not an error; the
+   * editor then marks nothing as unsupported (see `capabilities.js`).
    *
-   * Optional by design. A backend older than the endpoint answers 404, and a
-   * backend written by someone else may never have had it — neither is an
-   * error, both simply mean the editor knows nothing about that end and will
-   * not mark anything as unsupported (see `capabilities.js`).
-   *
-   * @returns the meta object, or null when the backend does not serve one
+   * @returns the meta object, or null
    */
   async fetchMeta(timeout = 5000) {
     const abort = new AbortController();
@@ -166,9 +133,9 @@ export class Backend {
   }
 
   /**
-   * An absolute path from a stage spec (`icon: "/icons/globe.svg"`) points at
-   * the backend, not at the page: it is the backend that serves the icons of
-   * its own stages. A full URL and a data URI are left alone.
+   * Resolve an absolute path from a stage spec (`/icons/globe.svg`) against
+   * the backend, which serves its stages' icons. Full URLs and data URIs are
+   * kept.
    */
   asset(path) {
     const raw = String(path ?? "");
@@ -176,9 +143,9 @@ export class Backend {
   }
 
   /**
-   * Checks that there is a StageFlow backend at the address — and checks it by
-   * the very request the editor cannot work without. Returns the number of
-   * stages; throws with a message fit for showing to the user.
+   * Check there is a StageFlow backend at the address, with the request the
+   * editor needs anyway (`/api/stages`). Returns the stage count; throws with
+   * a message fit for the user.
    */
   async probe(timeout = 8000) {
     const blocked = mixedContentProblem(this.url);
@@ -189,8 +156,8 @@ export class Backend {
     try {
       response = await this.fetch(this.stagesUrl, { signal: abort.signal });
     } catch (err) {
-      // fetch tells a refused connection, a DNS failure and a CORS block apart
-      // only in the console; the user gets the one thing worth acting on
+      // fetch does not tell a refused connection from DNS or CORS failures;
+      // give the user the one message worth acting on
       throw new Error(abort.signal.aborted
         ? t("backend.timeout")
         : t("backend.unreachable"));
@@ -198,7 +165,7 @@ export class Backend {
       clearTimeout(timer);
     }
     if (response.status === 401 || response.status === 403) {
-      // the one HTTP code with a cure the user can act on from this screen
+      // 401/403 can be fixed on this screen
       const said = await response.json().catch(() => null);
       throw new Error(said?.error
         ? `${said.error} (HTTP ${response.status})`
@@ -221,18 +188,13 @@ export class Backend {
 }
 
 /**
- * Why a page served over https cannot reach this address, or "".
+ * Why an https page cannot reach this address, or "".
  *
- * The one failure mode of using the hosted editor against your own backend,
- * and the one the browser reports worst: a request from an https page to an
- * http address is not refused by the backend, it never leaves the page.
- * `fetch` rejects with the same opaque TypeError it gives for a refused
- * connection, so without this the screen says "the backend is not reachable
- * (is it running?)" about a backend that is running perfectly well.
- *
- * Loopback is the exception the browsers make and the reason the hosted
- * editor is usable at all: `http://localhost` and `http://127.0.0.1` count
- * as trustworthy origins and are not blocked as mixed content.
+ * A request from an https page to an http address never leaves the page, and
+ * `fetch` fails with the same error as for a refused connection, so without
+ * this the editor would call a running backend unreachable. Loopback
+ * (`localhost`, `127.0.0.1`) is exempt in browsers, which is what makes the
+ * hosted editor usable with a local backend.
  */
 export function mixedContentProblem(url) {
   if (typeof location === "undefined" || location.protocol !== "https:") return "";
@@ -254,23 +216,18 @@ export function mixedContentProblem(url) {
 }
 
 /**
- * Headers fit to send: named, non-empty, and without the characters that
- * would make `fetch` throw on the whole request rather than skip the header.
- */
-/**
- * The editor's language as an `Accept-Language` value.
- *
- * The chosen language first and the fallback behind it: a backend with no
- * catalog for the choice should reach for the language the specs were written
- * in, rather than for whatever the browser happened to ask for on its own.
- *
- * A safelisted header, so it adds no CORS preflight to a cross-origin backend.
+ * The editor's language as `Accept-Language`: the chosen language, then the
+ * fallback. A safelisted header, so it adds no CORS preflight.
  */
 export function acceptLanguage() {
   const chosen = locale();
   return chosen === FALLBACK ? chosen : `${chosen}, ${FALLBACK};q=0.8`;
 }
 
+/**
+ * Headers that can be sent: named, non-empty, and free of characters that
+ * would make `fetch` reject the whole request.
+ */
 export function cleanHeaders(headers) {
   const out = {};
   for (const [name, value] of Object.entries(headers ?? {})) {
@@ -283,7 +240,7 @@ export function cleanHeaders(headers) {
   return out;
 }
 
-/** Where the address of the backend is remembered between sessions. */
+/** Where the backend address is remembered between sessions. */
 export function backendStorageKey(storageKey) {
   return storageKey ? `${storageKey}:backend` : null;
 }

@@ -1,14 +1,11 @@
 /**
- * Regions — visual areas around the nodes that belong to one owner: the
- * branches of `parallel`, the body of `try` and its `except` handlers, the
- * body of `map`.
+ * Regions: the areas drawn around nodes that belong to a block (`parallel`
+ * branches, a `try` body and its handlers, a `map` body).
  *
- * There are no regions in the pipeline JSON, and there should not be:
- * membership is derived from the graph — the nodes reachable from the entries
- * of the area along order edges, but NOT reachable from the exit point (the
- * owner's `next`). So a region cannot diverge from the real structure: move an
- * edge and the area is recomputed. This is exactly how the core computes the
- * scope of a `try` block (see TryNode.scope).
+ * They are not stored in the JSON but derived from the graph: the nodes
+ * reachable from the block's entries along order edges, but not from its
+ * exit (the owner's `next`). The core computes a `try` scope the same way
+ * (TryNode.scope).
  */
 import { crossesBox } from "./geometry.js";
 import { kindOf } from "./kinds.js";
@@ -33,15 +30,13 @@ export function reachable(graph, starts, stopAt = new Set()) {
 }
 
 /**
- * The regions of the current graph: `[{key, ownerId, rank, title, members: Set,
- * color}]`, sorted from the largest to the smallest — that way nested areas are
- * drawn on top of the enclosing ones.
+ * The regions of a graph: `[{key, ownerId, rank, title, members: Set,
+ * color}]`, largest first so nested regions are drawn on top.
  *
- * One node can own several areas (`regionGroups`): for `try` those are the body
- * and the handlers. They are computed in turn and do not intersect — a node
- * reachable from both stays with the first one, that is, with the body. `key`
- * is unique per graph: the layout tells columns apart by it, and the canvas
- * tells frames apart.
+ * A node may own several regions (`regionGroups`), e.g. a `try` body and its
+ * handlers. They do not overlap: a node reachable from both belongs to the
+ * first. `key` is unique per graph; layout and canvas tell regions apart by
+ * it.
  */
 export function computeRegions(graph, env) {
   const regions = [];
@@ -50,7 +45,7 @@ export function computeRegions(graph, env) {
     const groups = kind.regionGroups(node);
     if (!groups?.length) continue;
 
-    // the exit point and everything after it are not part of the area
+    // the exit and everything after it are outside the region
     const taken = node.next ? reachable(graph, [node.next]) : new Set();
     for (const group of groups) {
       const members = reachable(graph, group.entries ?? [], taken);
@@ -73,7 +68,7 @@ export function computeRegions(graph, env) {
   return regions;
 }
 
-/** Bounds of an area from the placement of its nodes; null if none was found. */
+/** A region's bounds from its nodes' positions, or null if it has none. */
 export function regionBounds(region, graph, layoutOf, padding = 20, labelSpace = 20) {
   let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
   for (const node of graph.nodes) {
@@ -95,22 +90,15 @@ export function regionBounds(region, graph, layoutOf, padding = 20, labelSpace =
 }
 
 /**
- * The area an order edge STEPS OVER: the body of a loop for its `next`, the
- * body of a `try` for what comes after the block.
+ * The region an order edge skips: a loop body for the loop's `next`, a `try`
+ * body for what follows the block. `orderEdgePath` routes such edges around
+ * the region instead of behind its cards.
  *
- * Drawn straight, such an edge runs behind the cards of the body — the exit of
- * the block disappears from the canvas and the first node of the body is left
- * with two wires coming in, one of which is not its own. `orderEdgePath` takes
- * the answer and goes around.
+ * Only this node's regions count, only those the target is not in (an edge
+ * into the body enters it), and only those in the way (`except` handlers sit
+ * beside the body, not below it). The remaining ones are merged into one box.
  *
- * Only the areas of this very node count, only those the target is not inside
- * of (an edge into the body enters its area, it does not skip it), and only
- * those actually in the way: the `except` handlers of a `try` stand beside the
- * body rather than under it, and counting them in would send the way around
- * the far side of the whole block for nothing. What is left is taken as one
- * box — an edge that steps over several areas steps over all of them.
- *
- * @param regions — as `computeRegions` returns them, each with a `box`
+ * @param regions as returned by `computeRegions`, each with a `box`
  */
 export function skippedArea(regions, ownerId, targetId, from, to) {
   const boxes = (regions ?? [])

@@ -1,36 +1,26 @@
 /**
- * Running a pipeline: the client of the debug API of the backend.
+ * Running a pipeline: the client of the backend's run API.
  *
- * The editor does not execute a pipeline itself — the semantics (CEL, types,
- * try/except, parallel) live in the StageFlow core, and a second implementation
- * in JavaScript would mean the debugger shows something other than what
- * actually happens. So there is only state here: where we stand, what is in the
- * frame, what happened.
+ * The editor executes nothing; CEL, types, try/except and parallel live in the
+ * core, and a JavaScript copy would make the debugger show something other
+ * than what happens. This holds only state: where the run is, the frame, what
+ * happened.
  *
- * The state is assembled from an EVENT STREAM (SSE) rather than by polling: a
- * debug step is an event, not the result of a request, and "the node started"
- * must appear on the graph when it happened, not on the next polling tick.
- * Commands (step, pause, editing a variable) go as ordinary POSTs — they are
- * initiated by the user, and their answer is not needed before the event.
+ * State is built from the event stream (SSE), not by polling, so a node shows
+ * as started when it starts. Commands (step, pause, set a variable) are plain
+ * POSTs.
  *
- * Every request here goes through `Backend.fetch`, the event stream included
- * (see `sse.js` for why that is not an `EventSource`): a backend that wants a
- * credential wants it on the stream too, and a run that authenticates for its
- * commands but not for its events is a run that hangs silently.
+ * Every request, the stream included, goes through `Backend.fetch` (see
+ * `sse.js`), so the credential is sent everywhere.
  */
 import { t } from "./i18n.js";
 import { EventStream } from "./sse.js";
 const LOG_LIMIT = 200; // a debug log, not a server log: more is not needed
 
 /**
- * Ready-made delays between nodes — a shared list for the "Run" menu and the
- * run dialog, so that "half a second" means the same thing in both places.
- *
- * A run without a delay ends before the eye can follow the path through the
- * graph: the nodes all flash at once, and "what is going on" is only visible in
- * the log. Stepping by hand shows it honestly, but talking about a pipeline
- * while pressing F10 on every node is awkward — so between "instantly" and "one
- * node per keystroke" there has to be a pace one can simply watch.
+ * Preset delays between nodes, shared by the Run menu and the run dialog.
+ * Without a delay a run is over before the eye can follow it; stepping works
+ * but is tedious to present with, so there are paces in between.
  */
 export const DELAY_PRESETS = [
   [0, "none"],
@@ -41,16 +31,15 @@ export const DELAY_PRESETS = [
 ];
 
 /**
- * A delay out of whatever was typed: "0,5" and "0.5" are the same thing (on
- * some keyboard layouts the comma is the one at hand, and `type=number` does
- * not accept it), garbage and a minus are zero rather than "it broke".
+ * A delay from typed text: "0,5" equals "0.5" (some layouts type a comma and
+ * `type=number` rejects it); invalid or negative input is zero.
  */
 export function parseDelay(text) {
   const value = Number(String(text).trim().replace(",", "."));
   return Number.isFinite(value) && value > 0 ? value : 0;
 }
 
-/** The label of a delay for the toolbar and the menu: 0.5 -> "0.5 s". */
+/** A delay's label for the toolbar and menu: 0.5 -> "0.5 s". */
 export function delayLabel(seconds) {
   const preset = DELAY_PRESETS.find(([value]) => value === seconds);
   if (preset) return t(`delay.${preset[1]}`);
@@ -79,8 +68,8 @@ export class Runner extends EventTarget {
   awaiting = null;   // while `awaiting`: {node, input, deadline}
   nextEvent = 0;     // the first event not yet seen, where the stream resumes
 
-  /** @param backend the `Backend` to run on — the run URL and the credential
-   * come from it, and nothing here reaches for the global `fetch` */
+  /** @param backend the `Backend` to run on; the run URL and credential come
+   * from it */
   constructor(backend) {
     super();
     this.backend = backend;
@@ -94,14 +83,13 @@ export class Runner extends EventTarget {
   /** Saved at a `wait` node: nothing runs until `answer`. */
   get awaitingInput() { return this.status === "awaiting"; }
 
-  /** The text the model is writing right now (or wrote last). */
+  /** The text a node is streaming now (or streamed last). */
   get streamText() { return this.streams.get(this.streamNode) ?? ""; }
 
   // ----------------------------------------------------------------- start
 
   /**
-   * Starts a run. `mode: "step"` stops before the very first node — that is
-   * what "open the debugger" means: from there on, by steps.
+   * Start a run. `mode: "step"` stops before the first node.
    */
   async start(pipeline, { mode = "run", delay = 0, vars = {}, secrets = null,
                           plan = null } = {}) {
@@ -116,14 +104,11 @@ export class Runner extends EventTarget {
 
     let data;
     try {
-      // secrets: {env: [names from the backend environment], names: [every
-      // secret name]} — the backend substitutes the former and scrubs the
-      // values of the latter out of the events, so that a key does not come
-      // back to the browser through the debug log
-      // `plan` is what this graph was DRAWN against, not a request to run on
-      // it: the backend resolves the real one from the credential and refuses
-      // the run if the two disagree — which is a better error than a list of
-      // stages that "do not exist"
+      // secrets: {env: names the backend substitutes from its environment,
+      // names: every secret name, which the backend masks in the events}.
+      // `plan` is the plan the graph was drawn against; the backend takes the
+      // real one from the credential and refuses a mismatch with a clear
+      // message
       data = await this.#post("", { pipeline, mode, delay, vars, secrets, plan });
     } catch (err) {
       this.status = "failed";
@@ -147,17 +132,17 @@ export class Runner extends EventTarget {
 
   async stop() {
     if (!this.awaitingInput) return this.#control({ action: "stop" });
-    // a run saved at a wait is stopped on the backend from the store; its
-    // last events come on the same log, from where this editor left it
+    // a run saved at a wait is stopped on the backend; its last events come on
+    // the same log, from where this editor left off
     const state = await this.#post(`/${this.runId}/control`, { action: "stop" });
     this.#resumeListening();
     return state;
   }
 
   /**
-   * Answer a run that waits at a `wait` node: `type` is the input it waits
-   * for, `payload` what the node's `outputs` read. The run goes on on the
-   * backend and its events continue in the same log.
+   * Answer a run waiting at a `wait` node: `type` is the input it waits for,
+   * `payload` the fields its `outputs` read. The run continues on the backend
+   * and its events continue in the same log.
    */
   async answer(payload, type = this.awaiting?.input) {
     if (!this.runId || !this.awaitingInput) return null;
@@ -184,7 +169,7 @@ export class Runner extends EventTarget {
 
   dropVar(name) { return this.#vars({ drop: [name] }); }
 
-  /** Close the debugger: the run stops, the state is forgotten. */
+  /** Close the debugger: stop the run and forget its state. */
   reset() {
     if (this.active) this.stop().catch(() => {});
     this.stopStream();
@@ -210,9 +195,8 @@ export class Runner extends EventTarget {
       from,
       fetcher: (url, init) => this.backend.fetch(url, init),
       onEvent: (event) => this.#event(event),
-      // the stream gave up reconnecting: the run may well be going on, but
-      // this editor has stopped being able to see it, and saying so beats a
-      // debugger that simply stops moving
+      // reconnecting failed: the run may still be going, but say we lost sight
+      // of it rather than freeze
       onError: (err) => {
         if (!this.active) return;
         this.status = "failed";
@@ -224,20 +208,14 @@ export class Runner extends EventTarget {
 
   #event(event) {
     if (Number.isInteger(event.index)) this.nextEvent = event.index + 1;
-    // A text stream is an EVENT CONTRACT, not knowledge about particular
-    // stages: any event with the payload `{stream: true, text: "…"}` counts as
-    // a chunk of text a node is writing right now. The name of the event does
-    // not matter — otherwise the editor would know the demo server's stages by
-    // name, and a foreign streaming stage (a transcription, a build log) would
-    // be left out. The column heading comes from there too (`label`): what the
-    // text is, the stage knows.
+    // Any event with payload `{stream: true, text: "…"}` is a chunk of text the
+    // node is writing; the event name does not matter, so any streaming stage
+    // works. `label` titles the column.
     //
-    // This stream goes PAST the common "change": there are hundreds of chunks,
-    // and each of them would redraw the graph, the palette and the toolbar
-    // whole — the tab would lie down on the thirtieth token. A separate
-    // "stream" event patches only the piece of the panel where the text is
-    // printed. The chunks do not go into the log either: they would crowd out
-    // everything meaningful (the limit is 200 entries).
+    // Chunks bypass the general "change" event, which would redraw the whole
+    // editor for each of hundreds of chunks; a separate "stream" event patches
+    // only the text. They are not logged either, which would push out
+    // everything else (the log keeps 200 entries).
     const chunk = event.payload;
     if (chunk?.stream === true && typeof chunk.text === "string") {
       const node = event.node ?? this.node;
@@ -251,8 +229,8 @@ export class Runner extends EventTarget {
     this.#pushLog(event);
     switch (event.type) {
       case "node_enter":
-        // a new entry into a node starts its text afresh: a retry must not be
-        // appended to the unfinished answer of the previous attempt
+        // a new entry into the node starts its text afresh, so a retry does not
+        // append to the previous attempt
         this.streams.delete(event.node);
         this.streaming = false;
         this.node = event.node;
@@ -276,14 +254,12 @@ export class Runner extends EventTarget {
         this.artifacts = event.artifacts ?? null;
         if (event.vars) this.vars = event.vars;
         this.stopStream();
-        // the final bill does not arrive in the stream: the events say what
-        // happened, the state says what it cost. One read at the end rather
-        // than a number tacked onto every event
+        // the totals are not in the stream, so read the state once at the end
         this.#refreshState();
         break;
       case "waiting":
-        // the backend saved the run and ended the stream; it goes on when
-        // somebody answers (`answer`), maybe days from now
+        // the backend saved the run and closed the stream; it goes on when
+        // answered (`answer`), maybe days later
         this.status = "awaiting";
         this.awaiting = { node: event.node, input: event.input, deadline: event.deadline ?? null };
         this.node = event.node ?? this.node;
@@ -299,8 +275,7 @@ export class Runner extends EventTarget {
       default:
         break;
     }
-    // the node has finished — the cursor stops blinking; no separate "stream
-    // closed" is needed for that, the end of a node is the end of its stream
+    // the end of a node ends its stream
     if (this.streaming && ["node_exit", "finished", "failed"].includes(event.type)) {
       this.streaming = false;
       this.dispatchEvent(new Event("stream"));
@@ -315,8 +290,7 @@ export class Runner extends EventTarget {
 
   async #control(payload) {
     if (!this.runId) return null;
-    // a pause and a step are visible at once, without waiting for an event: a
-    // button must answer
+    // show pause and step at once rather than waiting for the event
     if (payload.action === "pause") this.status = "paused";
     if (payload.action === "step" || payload.action === "resume") this.status = "running";
     this.#changed();
@@ -338,21 +312,21 @@ export class Runner extends EventTarget {
     if (state.vars) this.vars = state.vars;
     if (state.mode) this.mode = state.mode;
     if (typeof state.delay === "number") this.delay = state.delay;
-    // what the run has spent, and against what. A backend that counts
-    // nothing sends neither, and then there is nothing to show
+    // what the run has spent and its limits; a backend that counts nothing
+    // sends neither
     if (state.meters) this.meters = state.meters;
     if (state.limits) this.meterLimits = state.limits;
     this.#changed();
   }
 
-  /** Re-read the run state; used for the totals the event stream omits. */
+  /** Re-read the run state, for the totals the stream does not carry. */
   async #refreshState() {
     if (!this.runId) return;
     try {
       const response = await this.backend.fetch(`${this.base}/${this.runId}`);
       if (response.ok) this.#apply(await response.json());
     } catch {
-      // a run whose state cannot be re-read is still a finished run
+      // a run whose state cannot be re-read is still finished
     }
   }
 

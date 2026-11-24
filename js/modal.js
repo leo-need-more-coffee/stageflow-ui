@@ -1,11 +1,6 @@
 /**
- * The modal window of the editor: a shared frame for import/export, settings,
- * the stage registry and the run dialog.
- *
- * It lived in `toolbar.js` while the toolbar was the only thing opening
- * modals; the run dialog is opened from the editor facade, so the frame moved
- * into a module of its own — otherwise `rundialog.js` would drag the whole
- * button bar along with it.
+ * The editor's modal window: the frame used by import/export, settings, the
+ * stage registry and the run dialog.
  */
 
 function el(tag, className, text) {

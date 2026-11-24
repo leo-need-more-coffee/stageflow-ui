@@ -1,11 +1,8 @@
 /**
- * The version of the editor.
+ * The editor's version.
  *
- * Duplicated from package.json on purpose: the editor is plain ES modules
- * with no build step, so nothing rewrites a constant at build time and the
- * browser cannot read package.json. `tests/capabilities.mjs` fails if the two
- * ever disagree — the check costs nothing and a release with the wrong number
- * on the connection screen is confusing in exactly the situation the number
- * exists for.
+ * A copy of the one in package.json: there is no build step to inject it and
+ * the browser cannot read package.json. `tests/capabilities.mjs` checks the
+ * two match.
  */
 export const VERSION = "0.6.8";

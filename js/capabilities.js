@@ -1,26 +1,20 @@
 /**
- * What the backend on the other end can actually run.
+ * What the connected backend can run.
  *
- * The editor is built against one version of the core and then pointed at
- * whatever backend the user has. `kinds.js` mirrors the core's node registry
- * as it stood when the editor was built, so an editor newer than its backend
- * offers a node type the run will refuse — the mismatch used to surface as
- * `Unknown node type: 'map'` halfway through a run, which names neither the
- * cause nor the cure.
+ * `kinds.js` mirrors the core's node types as of the editor's release, so a
+ * newer editor can offer a type an older backend refuses mid-run with
+ * `Unknown node type`. A version range would not help (a backend may add types
+ * of its own), so the editor asks: `GET /api/meta` returns the registry, and
+ * types it lacks are marked.
  *
- * A version range would not fix it: a backend with a node type of its own
- * belongs to no range. So the backend is asked what it has —
- * `GET /api/meta` answers with the registry itself — and the editor marks
- * what it cannot offer instead of guessing.
- *
- * An older backend has no such endpoint. Then nothing is known, and nothing
- * is marked: a false "unsupported" on a perfectly good backend is worse than
- * the error we are avoiding. `known` says which of the two situations this is.
+ * An older backend has no `/api/meta`. Then nothing is known and nothing is
+ * marked, since a false "unsupported" is worse than the error it would avoid.
+ * `known` says which case this is.
  */
 import { t } from "./i18n.js";
 
 export class BackendCapabilities extends EventTarget {
-  /** null — nothing is known (no /api/meta); otherwise the Set of node types. */
+  /** null if nothing is known (no /api/meta); otherwise the Set of node types. */
   #nodeTypes = null;
   #version = null;
   #api = null;
@@ -45,20 +39,17 @@ export class BackendCapabilities extends EventTarget {
   /** The name of the plan this answer is about, when the backend says. */
   get plan() { return this.#plan; }
 
-  /** Every plan the backend will answer about, for a client that offers the
-   * choice — so the names are not written into the editor, which cannot know
-   * them and would be wrong about a backend that is not the example one. */
+  /** Every plan the backend answers about, for offering a choice; the editor
+   * does not hard-code plan names. */
   get plans() { return this.#plans; }
 
-  /** How the plan was arrived at: `"query"` — the editor asked to be shown
-   * this one, `"token"` — it is the caller's own, `"open"` — the backend
-   * tells nobody apart. */
+  /** Where the plan came from: `"query"` (the editor asked to see it),
+   * `"token"` (the caller's own) or `"open"` (no authentication). */
   get planSource() { return this.#planSource; }
 
   /**
-   * Whether what is on screen is a what-if rather than this caller's own
-   * allowance — worth saying out loud, because the two look identical and
-   * only one of them predicts what a run will do.
+   * Whether the screen shows another plan's allowance rather than the
+   * caller's own; the two look the same but only one predicts a run.
    */
   get previewing() { return this.#planSource === "query"; }
 
@@ -76,23 +67,18 @@ export class BackendCapabilities extends EventTarget {
     return typeof value === "number" ? value : null;
   }
 
-  /** Unknown means "do not get in the way": only a listed absence is a no. */
+  /** Unknown counts as supported: only an explicit absence is a no. */
   supports(type) {
     return this.#nodeTypes === null || this.#nodeTypes.has(type);
   }
 
   /**
-   * Why a node type is not on offer, in words fit for a tooltip.
+   * Why a node type is not offered, for a tooltip.
    *
-   * Careful about the reason given. `/api/meta` answers for the caller, so a
-   * type can be missing because the core is older **or** because this
-   * caller's allowance is narrower — and the answer does not say which. An
-   * earlier version of this message always blamed the core, which read as
-   * nonsense next to a status bar announcing a perfectly recent one.
-   *
-   * So: name the plan when the backend named one, because then the reason is
-   * known and the user can act on it. Otherwise say what is true — this
-   * backend does not offer it — and leave the why alone.
+   * `/api/meta` answers for the caller, so a type may be missing because the
+   * core is older or because the caller's plan excludes it, and the answer
+   * does not say which. Name the plan when the backend gave one; otherwise
+   * only say this backend does not offer it.
    */
   reason(type) {
     if (this.supports(type)) return "";
@@ -105,7 +91,7 @@ export class BackendCapabilities extends EventTarget {
       : t("caps.backendLacks", { type });
   }
 
-  /** One line about the backend for the status bar and the connection screen. */
+  /** One line about the backend for the status bar and connection screen. */
   summary() {
     if (!this.#probed) return "";
     if (!this.known) return t("caps.unknown");
@@ -117,12 +103,9 @@ export class BackendCapabilities extends EventTarget {
   }
 
   /**
-   * What the backend's limits refuse about a graph, before it is run.
-   *
-   * The same three things the core checks at validation, for the same
-   * reason: what is soundly knowable from the JSON. A loop's cost is not —
-   * the passes come from the data — so nothing here multiplies anything, and
-   * a graph the editor cannot judge is a graph it stays quiet about.
+   * What the backend's limits refuse about a graph, before it runs: the same
+   * checks the core makes at validation. A loop's cost depends on data and
+   * is not estimated.
    */
   issuesFor(graph, kindOf) {
     if (!this.#limits) return [];
@@ -175,7 +158,7 @@ export class BackendCapabilities extends EventTarget {
     this.dispatchEvent(new Event("change"));
   }
 
-  /** Nothing was learned — an old backend, or one that answered with rubbish. */
+  /** Nothing known: an old backend, or an unusable answer. */
   setUnknown() {
     this.#nodeTypes = null;
     this.#version = null;
@@ -189,8 +172,8 @@ export class BackendCapabilities extends EventTarget {
   }
 
   /**
-   * Asks the backend. Never throws and never blocks the editor: a backend
-   * that does not answer this is simply one the editor knows nothing about.
+   * Ask the backend. Never throws or blocks; a backend that does not answer
+   * is simply one the editor knows nothing about.
    */
   async load(backend) {
     try {
@@ -205,12 +188,8 @@ export class BackendCapabilities extends EventTarget {
 
 
 /**
- * The fewest nodes a run can pass before it can end.
- *
- * A lower bound, which is what makes it safe to warn by: every real run does
- * at least this much, so a graph whose cheapest path does not fit cannot
- * finish at all. A graph with a long road and a short one is judged by the
- * short one.
+ * The fewest nodes a run must pass to end: a lower bound, so a graph whose
+ * shortest path exceeds the step limit cannot finish at all.
  */
 export function shortestRun(graph, kindOf) {
   const byId = new Map((graph.nodes ?? []).map((n) => [n.id, n]));

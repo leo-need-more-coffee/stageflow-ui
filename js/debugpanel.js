@@ -1,15 +1,12 @@
 /**
- * The debug panel: where we stand, what we control, what is in the frame and
- * what happened.
+ * The debug panel: the run's state and controls, the frame and the event log.
  *
- * A separate panel at the bottom rather than an inspector tab: during debugging
- * the graph (which node is executing), the variables and the step buttons are
- * needed AT THE SAME TIME. The inspector meanwhile goes on showing the node
- * being looked at — debugging must not take its room away.
+ * A panel at the bottom rather than an inspector tab, so the graph, the
+ * variables and the step buttons are visible together while the inspector
+ * keeps showing the selected node.
  *
- * The panel is updated on every run event, so it is built once and patched in
- * pieces afterwards: redrawing it whole would tear out the field in which a
- * variable value is being typed at that very moment.
+ * It is built once and patched on each event; redrawing it whole would throw
+ * away a variable value being typed.
  */
 import { t } from "./i18n.js";
 import { formatLiteral, outputRows, parseLiteral } from "./kinds.js";
@@ -41,9 +38,7 @@ export class DebugPanel {
     this.env = env;
     host.classList.add("sf-debug");
     this.#build();
-    // the answer stream arrives in chunks, a hundred per answer: the panel
-    // patches ONLY its own text block, touching neither the variable table nor
-    // the log
+    // a streamed answer arrives in many chunks; only its text block is patched
     env.runner.addEventListener("stream", () => this.#renderStream());
   }
 
@@ -57,13 +52,11 @@ export class DebugPanel {
     const logBox = el("div", "sf-debug-col sf-debug-col-log");
     logBox.append(el("div", "sf-section-title", t("debug.events")), this.logEl);
 
-    // The model answer gets a column of its own: it is written chunk by chunk,
-    // and the room for it must be permanent, or the panel would twitch on every
-    // token
+    // the streamed text has a column of its own, so the layout does not jump
+    // with each chunk
     this.streamEl = el("div", "sf-debug-stream");
     this.streamBox = el("div", "sf-debug-col sf-debug-col-stream");
-    // the heading is set by the stage (payload.label): the panel does not know
-    // what text it was sent — it can show any stream
+    // the title comes from the stage (payload.label), so any stream can be shown
     this.streamTitle = el("div", "sf-section-title", t("debug.stream"));
     this.streamBox.append(this.streamTitle, this.streamEl);
     this.streamBox.hidden = true;
@@ -92,12 +85,8 @@ export class DebugPanel {
   }
 
   /**
-   * The answer text as it is being written.
-   *
-   * A patch of one DOM node rather than a redraw: there are hundreds of chunks.
-   * The scroll sticks to the bottom — but only if the user has not scrolled it
-   * back themselves: reading the middle of an answer that keeps running away
-   * downwards is impossible.
+   * The streamed text as it arrives: one DOM node is patched per chunk. It
+   * stays scrolled to the bottom unless the user has scrolled up to read.
    */
   #renderStream() {
     const { runner } = this.env;
@@ -165,12 +154,8 @@ export class DebugPanel {
   }
 
   /**
-   * What the run has spent, next to what it is allowed.
-   *
-   * A ceiling nobody can see is a ceiling you find out about by hitting it,
-   * which is the one moment it is no use. Limited meters come first and
-   * carry their allowance; the rest are shown as plain totals, because a
-   * meter nobody limits is still what the bill is made of.
+   * What the run has spent, next to what it is allowed. Limited meters come
+   * first with their limit; unlimited ones are shown as plain totals.
    */
   #meterChips() {
     const { meters = {}, meterLimits = {} } = this.env.runner;
@@ -203,9 +188,8 @@ export class DebugPanel {
     return button;
   }
 
-  /** The delay between nodes: "watch it go" without stepping by hand. It goes
-   * into the editor rather than straight into the run: the next run starts at
-   * the same pace (see `Editor.setRunDelay`). */
+  /** The delay between nodes. It is set on the editor, not only on this run,
+   * so the next run keeps the pace (see `Editor.setRunDelay`). */
   #delayField() {
     const wrap = el("label", "sf-debug-delay");
     wrap.append(el("span", "", "delay"));
@@ -227,10 +211,9 @@ export class DebugPanel {
   // ---------------------------------------------------------------- answer
 
   /**
-   * The answer to a waiting run: a JSON payload and a button. Prefilled with
-   * the fields the `wait` node reads from the answer (its `outputs`), so the
-   * person answering sees what is expected instead of an empty box. Built once
-   * per wait: a redraw on every event would throw away what is being typed.
+   * The answer to a waiting run: a JSON payload and a button, prefilled with
+   * the fields the `wait` node reads (its `outputs`). Built once per wait so a
+   * redraw does not discard what is being typed.
    */
   #renderAnswer() {
     const { runner } = this.env;
@@ -284,7 +267,7 @@ export class DebugPanel {
     const fields = {};
     for (const row of node ? outputRows(node) : []) {
       if (!row.cel) fields[row.src] = "";
-      // `output.text` in an expression is a field of the answer too
+      // `output.text` in an expression is an answer field too
       for (const match of row.cel ? row.src.matchAll(/output\.([^\W\d]\w*)/gu) : []) {
         fields[match[1]] ??= "";
       }
@@ -296,12 +279,9 @@ export class DebugPanel {
 
   #renderVars() {
     const { runner } = this.env;
-    // the status is part of it: the same frame is editable while the run goes
-    // and read-only once it has stopped or is waiting
+    // include the status: the frame is editable only while the run is active
     const json = `${runner.active}:${JSON.stringify(runner.vars)}`;
-    // do not touch the table while something is being typed into it: the events
-    // come in a stream, and a redraw would throw the field out along with what
-    // was typed
+    // do not redraw the table while a value in it is being typed
     if (json === this.#varsJson && this.varsEl.childElementCount) return;
     if (this.host.contains(document.activeElement) && this.varsEl.contains(document.activeElement)) return;
     this.#varsJson = json;
@@ -315,10 +295,9 @@ export class DebugPanel {
       const row = el("div", `sf-debug-var${secret ? " sf-debug-var-secret" : ""}`);
       row.append(el("span", "sf-debug-var-name", name));
       const input = el("input", "sf-debug-var-value");
-      // The value of a secret does not arrive here at all: the backend
-      // replaces it in the events with a mask. The field stays
-      // closed even during a run — otherwise an edit would send the dots back
-      // and wipe the key in the live frame
+      // A secret's value never arrives here: the backend masks it in the
+      // events. Its field stays read-only, or an edit would send the mask back
+      // and overwrite the key in the live frame
       input.value = secret ? SECRET_MASK : formatLiteral(runner.vars[name]);
       input.disabled = secret || !runner.active;
       input.title = secret
@@ -381,8 +360,8 @@ export class DebugPanel {
   }
 
   #detail(event) {
-    // the server has already scrubbed the values, but only the editor knows the
-    // name of a secret: the log shows WHAT happened without revealing with what
+    // the backend has already masked the value, but only the editor knows which
+    // names are secrets
     if (event.type === "var_set" && this.env.secrets?.has(event.name)) {
       return `${event.name} = ${SECRET_MASK}`;
     }

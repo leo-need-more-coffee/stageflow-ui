@@ -1,33 +1,26 @@
 /**
- * The editor canvas: rendering the graph and the mouse interactions.
+ * The editor canvas: drawing the graph and handling the mouse.
  *
- * The two sorts of connectors are separated by axis, so that the layers do not
- * get confused by the eye:
+ * The two kinds of connectors run on different axes:
  *
- *  - ORDER (diamonds, VERTICAL): execution order. The inlet is at the centre of
- *    the top edge, the outlets are a bar along the bottom one (next/then/else/
- *    cases/branches/catch). These are the real edges from the JSON; they are
- *    drawn as vertical béziers, so a pipeline reads top to bottom.
- *  - DATA (circles, HORIZONTAL): variable flows. Inputs on the left edge
- *    ("arg ← variable"), outputs on the right ("field → variable"). Data edges
- *    are not stored in the JSON — they are derived from the graph
- *    (dataflow.js) and painted in the stable color of the variable.
+ *  - order (diamonds, vertical): execution order. The inlet is at the top
+ *    middle, the outlets along the bottom (next/then/else/cases/branches/
+ *    catch). These are the JSON's edges, drawn as vertical béziers, so a
+ *    pipeline reads top to bottom.
+ *  - data (circles, horizontal): variables. Inputs on the left
+ *    ("arg ← variable"), outputs on the right ("field → variable"). These
+ *    edges are derived (dataflow.js) and drawn in the variable's color.
  *
- * By default the data wires do NOT all hang on the canvas at once: the "focus"
- * mode leaves only the ones touching the card under the cursor, and the path of
- * a variable can be lit up by hovering its row. The remaining edges stay in the
- * SVG but are hidden by style — so highlighting requires no redraw.
+ * In the default "focus" mode only the data wires of the hovered card are
+ * shown, and hovering a row highlights that variable's path. All edges are in
+ * the SVG and toggled by CSS, so highlighting needs no redraw.
  *
- * The geometry is deterministic and agrees with editor.css: the ends of the
- * edges are computed by arithmetic, without measuring the DOM. The width of a
- * card grows when there are more order outlets than fit the minimum.
+ * Geometry is computed, not measured, and matches editor.css.
  *
- * A graph is ASSEMBLED ON THE CANVAS rather than in the inspector: a wire
- * dropped into empty space opens a "what to create here" menu and connects what
- * was created; a click on a port takes the wire "on hold" until the next click
- * (touchpads, long links); a ⊕ appears on the edge under the cursor — insert a
- * node into it; a double click on the background creates a node in place. While
- * a wire is in hand, the canvas highlights where it can be dropped.
+ * A graph is built on the canvas: a wire dropped on empty space offers what to
+ * create and connects it; a click on a port holds the wire until the next
+ * click; hovering an edge shows ⊕ to insert a node; a double click on the
+ * background creates one. While a wire is held, valid targets are highlighted.
  */
 import { categoryColor, varColor } from "./colors.js";
 import { dataLinks } from "./dataflow.js";
@@ -38,8 +31,7 @@ import { KINDS, StageKind, kindOf } from "./kinds.js";
 import { openMenu } from "./menu.js";
 import { computeRegions, regionBounds, skippedArea } from "./regions.js";
 
-/** How long a card stays marked as new or newly different. Long enough to look
- * up from a chat window, short enough not to become part of the picture. */
+/** How long a new or changed card stays marked. */
 const MARKS_MS = 6000;
 import { canContinue, freePortIndex } from "./wiring.js";
 
@@ -88,11 +80,9 @@ export class Viewport {
   }
 }
 
-/** The meaningful color of an order port dot: "onwards" is green, the "yes"
- * branch is amber, an error handler is red, the body of a block and the
- * branches of a parallel take the color of their area. The same dictionary of
- * colors as the edges and the labels use. Keyed by the stable port key, not by
- * the visible label. */
+/** The color of an order port dot, by port key: next is green, then amber,
+ * else/default soft, except red; block bodies and parallel branches take
+ * their region's color. Edges and labels use the same colors. */
 function portColor(port, kindColor) {
   if (port.add) return "var(--ink-faint)";
   if (port.key === "next") return "var(--ok)";
@@ -103,8 +93,8 @@ function portColor(port, kindColor) {
   return kindColor;
 }
 
-/** The label of a data port: the arrow is painted separately — the row reads as
- * "what came in" / "what went out" rather than as one solid monospace string. */
+/** A data port label; the arrow is drawn separately so the row reads as
+ * "came in" / "went out". */
 function rowLabel(text) {
   const node = el("span", "sf-rlabel");
   for (const part of String(text).split(/([←→⇢])/)) {
@@ -134,11 +124,10 @@ export class CanvasView {
     this.regionsEl = el("div", "sf-regions"); // the backing layer under edges and nodes
     this.svg = svgEl("svg", { class: "sf-edges" });
     this.nodesEl = el("div", "sf-nodes");
-    // the overlay lives apart from `svg`: redrawing the graph does not touch
-    // it, so a wire in hand survives both a selection change and a node edit
+    // the overlay is separate from `svg`, so a held wire survives redraws
     this.overlay = svgEl("svg", { class: "sf-edges sf-overlay" });
     this.toolsEl = el("div", "sf-tools");
-    // the buttons of the edge under the cursor: insert a node, or cut the link
+    // buttons on the hovered edge: insert a node, or cut the link
     this.edgeToolsEl = el("div", "sf-edge-tools");
     this.edgeToolsEl.hidden = true;
     const plus = el("button", "sf-edge-btn sf-edge-plus", "+");
@@ -157,25 +146,22 @@ export class CanvasView {
     host.addEventListener("wheel", (e) => this.#onWheel(e), { passive: false });
     host.addEventListener("pointerdown", (e) => this.#onPointerDown(e));
     host.addEventListener("dblclick", (e) => this.#onDoubleClick(e));
-    // the right button is taken by the selection marquee — the system menu only
-    // gets in the way here; the middle one is taken by panning — so is the
-    // browser's autoscroll
+    // the right button draws the selection marquee and the middle one pans, so
+    // the context menu and autoscroll are suppressed
     host.addEventListener("contextmenu", (e) => e.preventDefault());
     host.addEventListener("auxclick", (e) => e.preventDefault());
     host.addEventListener("mousedown", (e) => { if (e.button === 1) e.preventDefault(); });
-    // Esc drops the wire without touching the selection: we intercept it before
-    // the editor does
+    // Esc drops a held wire without clearing the selection; caught before the
+    // editor sees it
     window.addEventListener("keydown", (e) => {
       if (e.key !== "Escape" || !this.#armed) return;
       this.#disarm();
       e.stopPropagation();
     }, true);
 
-    // hovering a card shows its data wires (the "focus" mode), hovering a
-    // variable row lights up the whole path of that variable through the graph.
-    // We listen to pointermove on the canvas rather than pointerover/out on the
-    // nodes: a redraw throws the cards out of the DOM, and a pointerout from
-    // them never reaches us.
+    // hovering a card shows its data wires; hovering a variable row highlights
+    // its path. pointermove on the canvas, since cards are replaced on redraw
+    // and their pointerout would be lost
     host.addEventListener("pointermove", (e) => {
       this.#cursor = { x: e.clientX, y: e.clientY };
       this.#onHover(e.target);
@@ -186,16 +172,14 @@ export class CanvasView {
     });
   }
 
-  /** Where to paste from the clipboard: under the cursor if it is over the
-   * canvas, otherwise null — the paste itself will offset the copies from the
-   * originals. */
+  /** Where to paste: under the cursor if it is over the canvas, else null (the
+   * copies are offset from the originals). */
   pasteAnchor() {
     if (!this.#cursor) return null;
     return this.view.toWorld(this.#cursor.x, this.#cursor.y, this.host.getBoundingClientRect());
   }
 
-  /** A short message at the bottom edge of the canvas: "copied", "pasted" —
-   * without it copying looks like "nothing happened". */
+  /** A short message at the bottom of the canvas ("copied", "pasted"). */
   flashHint(text, ms = 1600) {
     this.#hint(text);
     clearTimeout(this.#flash);
@@ -209,9 +193,8 @@ export class CanvasView {
     return this.view.toWorld(rect.left + rect.width / 2, rect.top + rect.height / 2, rect);
   }
 
-  /** Fits the zoom and pan so that the graph fits the visible area. We do not
-   * shrink below `MIN_FIT_SCALE`: a large graph is better shown big and partly
-   * (pan and zoom take it from there) than whole but as unreadable porridge. */
+  /** Fit the graph to the view. The scale does not go below `MIN_FIT_SCALE`:
+   * a large graph is better shown partly and readable. */
   fitView(padding = 56) {
     const nodes = this.env.model.graph.nodes;
     const rect = this.host.getBoundingClientRect();
@@ -240,7 +223,7 @@ export class CanvasView {
       this.view.x = (rect.width - (maxX - minX) * scale) / 2 - minX * scale;
       this.view.y = (rect.height - (maxY - minY) * scale) / 2 - minY * scale;
     } else {
-      // it does not fit whole — show the start of the graph, not its middle
+      // too big to fit: show the start of the graph
       this.view.x = padding - minX * scale;
       this.view.y = padding - minY * scale;
     }
@@ -257,17 +240,10 @@ export class CanvasView {
   #marksTimer = null;
 
   /**
-   * Show a graph that has just been replaced as a CHANGE rather than a jump.
-   *
-   * Called after the render, when the cards are already where they belong: a
-   * card that moved is put back where it was with a transform and released on
-   * the next frame, so it travels to its new place instead of appearing there.
-   * That is the whole trick — no second layout, no measuring, because the
-   * distance is known from the graph itself.
-   *
-   * What is new or newly different is marked for a few seconds. On a graph
-   * somebody else just rewrote, "what did it touch" is the first question, and
-   * the answer is otherwise a diff nobody can run.
+   * Show a replaced graph as a change rather than a jump. After the render,
+   * each moved card is put back at its old position with a transform and
+   * released on the next frame, so it slides to its new place. New and
+   * changed cards are marked for a few seconds, answering "what did it touch".
    */
   showChange(change, { hold = false } = {}) {
     if (!change || (!change.moved?.size && !change.touched)) return;
@@ -282,8 +258,8 @@ export class CanvasView {
     for (const id of change.added ?? []) this.#nodeElById(id)?.classList.add("sf-node-new");
     for (const id of change.changed ?? []) this.#nodeElById(id)?.classList.add("sf-node-edited");
 
-    // released on the next frame: set and cleared in one go, the browser sees
-    // no change at all and nothing moves
+      // released on the next frame; set and cleared in one frame, nothing would
+      // move
     requestAnimationFrame(() => {
       for (const id of (change.moved ?? new Map()).keys()) {
         const card = this.#nodeElById(id);
@@ -291,8 +267,7 @@ export class CanvasView {
       }
     });
 
-    // `hold`: the marks are not decoration but the thing being decided about,
-    // and a question does not time out
+    // with `hold` the marks stay until the change is kept or reverted
     if (!hold) this.#marksTimer = setTimeout(() => this.clearMarks(), MARKS_MS);
   }
 
@@ -304,12 +279,12 @@ export class CanvasView {
     }
   }
 
-  /** A local attachment point -> world coordinates. */
+  /** A local attachment point in world coordinates. */
   #point(node, { dx, dy }) {
     return { x: node.metadata.ui.x + dx, y: node.metadata.ui.y + dy };
   }
 
-  /** A horizontal bézier: tangents left and right — for data edges. */
+  /** A horizontal bézier, for data edges. */
   #hPath(a, b) {
     const dx = Math.max(48, Math.abs(b.x - a.x) / 2);
     return `M ${a.x} ${a.y} C ${a.x + dx} ${a.y}, ${b.x - dx} ${b.y}, ${b.x} ${b.y}`;
@@ -332,8 +307,7 @@ export class CanvasView {
         .map((i) => i.node),
     );
 
-    // an empty canvas must say where to start: otherwise the only visible way
-    // to do anything is the palette, and the graph gets assembled by clicks
+    // an empty canvas says where to start
     this.hostEmpty ??= el("div", "sf-empty");
     this.hostEmpty.textContent = "";
     if (!graph.nodes.length) {
@@ -347,7 +321,7 @@ export class CanvasView {
       this.hostEmpty.remove();
     }
 
-    // the trace of a run: the visited nodes are lit weaker than the current one
+    // a run's trace: visited nodes lit more faintly than the current one
     this.visitedNodes = new Set(this.env.runner?.visited ?? []);
 
     const layouts = new Map(graph.nodes.map((n) => [n.id, this.#layout(n)]));
@@ -361,9 +335,8 @@ export class CanvasView {
     if (this.#armed) this.#markSource(this.#armed.fromId); // the cards were recreated
   }
 
-  /** The areas around parallel branches, a try body and its except handlers:
-   * the membership is derived from the graph (regions.js), the bounds from the
-   * actual placement of the nodes. */
+  /** Regions around parallel branches, try bodies and handlers: membership from
+   * the graph (regions.js), bounds from the nodes' positions. */
   #renderRegions(graph, layouts) {
     this.regions = computeRegions(graph, this.env);
     for (const region of this.regions) {
@@ -402,7 +375,7 @@ export class CanvasView {
     root.style.setProperty("--kind-color", kind.accent(node, this.env));
     if (this.env.selection.has(node.id)) root.classList.add("sf-selected");
     if (badNodes.has(node.id)) root.classList.add("sf-invalid");
-    // the run: where execution is now and where it has already been
+    // the run: the current node and the ones already visited
     const run = this.env.runner;
     if (run?.active && run.node === node.id) {
       root.classList.add(run.waiting ? "sf-run-paused" : "sf-run-active");
@@ -410,7 +383,7 @@ export class CanvasView {
       root.classList.add("sf-run-done");
     }
 
-    // the order inlet — a diamond at the centre of the top edge
+    // the order inlet: a diamond at the top middle
     root.append(el("span", "sf-conn sf-conn-order sf-conn-top"));
 
     const head = el("div", "sf-head");
@@ -449,8 +422,8 @@ export class CanvasView {
       root.append(row);
     });
 
-    // node settings: "argument = value". There is no connector — the source of
-    // these values is the pipeline itself, not another node
+    // value settings ("argument = value"); no connector, since the value comes
+    // from the pipeline, not another node
     layout.values.forEach((row) => {
       const line = el("div", "sf-row sf-row-value");
       line.title = `${row.name} = ${row.text}`;
@@ -472,13 +445,11 @@ export class CanvasView {
       root.append(row);
     });
 
-    // the order outlets — a bar along the bottom edge
+    // the order outlets along the bottom
     if (layout.orders.length) {
       const bar = el("div", "sf-orderbar");
       layout.orders.forEach((port, index) => {
-        // a free port is marked: it is the one a wire is pulled from to
-        // continue the graph, and that must be visible on the card without
-        // hovering
+        // free ports are marked, since a wire is pulled from them to continue
         const free = !port.add && !port.get?.();
         const slot = el("div", "sf-oport" + (port.add ? " sf-oport-add" : "")
           + (free ? " sf-oport-free" : ""));
@@ -541,10 +512,9 @@ export class CanvasView {
   }
 
   /**
-   * Data edges from the links of dataflow.js. In the "focus" mode only the
-   * edges of the card under the cursor are visible (the `sf-focus` class, set
-   * in `#applyHover`), the rest are hidden by CSS — until a variable is
-   * hovered.
+   * Data edges from dataflow.js. In "focus" mode only the hovered card's edges
+   * are shown (`sf-focus`, set in `#applyHover`); the rest are hidden by CSS
+   * until a variable is hovered.
    */
   #renderDataEdges(graph, layouts) {
     const byId = new Map(graph.nodes.map((n) => [n.id, n]));
@@ -573,23 +543,19 @@ export class CanvasView {
     this.#applyHover(); // the cursor may have stayed on a card
   }
 
-  /** Light the path of a variable from OUTSIDE the canvas: the variable index
-   * in the panel hovers the graph the same way a row on a card does. Cleared
-   * with `null`, and the next move of the cursor over the canvas overrides it
-   * anyway. */
+  /** Highlight a variable's path from outside the canvas (the panel's variable
+   * index). `null` clears it; the next hover on the canvas overrides it. */
   highlightVariable(name) {
     if (this.#hover.key === (name ?? null)) return;
     this.#hover = { ...this.#hover, key: name ?? null };
     this.#applyHover();
   }
 
-  /** Remembers what is under the cursor and repaints the data layer on change. */
+  /** Track what is hovered and repaint the data layer when it changes. */
   #onHover(target) {
-    // the ⊕ on the edge under the cursor — insert a node into it; the button
-    // lives while the cursor is on the edge or on the button itself
+    // ⊕ on the hovered edge, kept while the cursor is on the edge or the button
     const hit = target?.closest?.(".sf-edge-hit");
-    // while a wire is in hand (or a node is carried from the palette) the edge
-    // buttons are only in the way
+    // hide the edge buttons while a wire or palette node is held
     if (this.#armed || this.host.classList.contains("sf-connecting")) this.#hideEdgePlus();
     else if (hit) this.#showEdgePlus(hit);
     else if (!target?.closest?.(".sf-edge-tools")) this.#hideEdgePlus();
@@ -601,9 +567,8 @@ export class CanvasView {
     this.#applyHover();
   }
 
-  /** The wires of the card under the cursor are visible (`sf-focus`), the path
-   * of the hovered variable is highlighted (`sf-hl-on`), the rest is dimmed by
-   * CSS. */
+  /** Show the hovered card's wires (`sf-focus`) and the hovered variable's path
+   * (`sf-hl-on`); CSS dims the rest. */
   #applyHover() {
     const { node, key } = this.#hover;
     this.host.classList.toggle("sf-hl", Boolean(key));
@@ -620,8 +585,7 @@ export class CanvasView {
   // ---------------------------------------------------------- interaction
 
   #onWheel(e) {
-    // the menu lives inside the canvas (it opens at the event point), so its
-    // wheel would reach us and zoom the graph instead of scrolling the stage list
+    // wheel events inside the menu scroll the menu, not zoom the graph
     if (e.target.closest?.(".sf-menu")) return;
     e.preventDefault();
     const factor = e.deltaY < 0 ? 1.1 : 1 / 1.1;
@@ -631,17 +595,16 @@ export class CanvasView {
   }
 
   #onPointerDown(e) {
-    // the menu and the overlay buttons handle their clicks themselves
+    // the menu and overlay buttons handle their own clicks
     if (e.target.closest?.(".sf-menu") || e.target.closest?.(".sf-tools")) return;
 
-    // the middle button pans from anywhere (over cards included), the right one
-    // draws the selection marquee: neither depends on what is under the cursor
+    // middle button pans and right button draws the marquee, wherever they start
     if (e.button === 1) { this.#closeMenu(); this.#startPan(e); return; }
     if (e.button === 2) { this.#closeMenu(); this.#startMarquee(e); return; }
     if (e.button !== 0) return;
 
-    // a wire is already in hand: a click on a node connects, a click on empty
-    // space offers to create a node there
+    // a wire is held: a click on a node connects, on empty space offers to
+    // create a node
     if (this.#armed) {
       const armed = this.#armed;
       const targetId = this.#nodeAt(e);
@@ -667,16 +630,14 @@ export class CanvasView {
       this.env.selection.set({ type: "node", id: regionLabel.dataset.owner });
       this.#startRegionDrag(e, regionLabel.dataset.region);
     } else if (nodeEl && orderSlot) {
-      // a link can be pulled by the whole port slot, not only by the diamond:
-      // hitting a 9×9 point with the mouse is not a task a node editor should set
+      // the whole port slot starts a wire, not just the small diamond
       this.#startOrderDrag(e, nodeEl.dataset.id, Number(orderSlot.dataset.order));
     } else if (nodeEl && isDrag && dataRow) {
       this.#startDataDrag(e, nodeEl.dataset.id, Number(dataRow.dataset.dataout));
     } else if (nodeEl) {
       const id = nodeEl.dataset.id;
-      // a click on a node FROM a group does not break the group up — otherwise
-      // a group could not be dragged; it collapses to a single node on release
-      // if no dragging happened
+      // clicking a node in a group keeps the group so it can be dragged; it
+      // narrows to that node on release if nothing moved
       if (e.shiftKey) this.env.selection.toggle(id);
       else if (!this.env.selection.has(id)) this.env.selection.set({ type: "node", id });
       this.#startNodeDrag(e, id);
@@ -691,8 +652,8 @@ export class CanvasView {
     }
   }
 
-  /** A double click on the background creates a node in place, on an edge — in
-   * the middle of it. */
+  /** A double click creates a node: in place on the background, in the
+   * middle of an edge. */
   #onDoubleClick(e) {
     if (e.target.closest?.(".sf-node") || e.target.closest?.(".sf-menu")
       || e.target.closest?.(".sf-tools")) return;
@@ -704,9 +665,8 @@ export class CanvasView {
     });
   }
 
-  /** A drag with a mandatory end: `pointercancel` (the gesture was taken over
-   * by the system, the window lost focus) must remove the temporary graphics —
-   * otherwise the wire keeps hanging on the canvas and gets in the way. */
+  /** A drag that always cleans up: `pointercancel` (the system took the
+   * gesture, the window lost focus) removes the temporary graphics. */
   #drag(e, { move, up, cancel }) {
     const finish = (handler) => (ev) => {
       window.removeEventListener("pointermove", onMove);
@@ -740,8 +700,7 @@ export class CanvasView {
     });
   }
 
-  /** Dragging a card; if it is in a group selection the whole group moves,
-   * which is what the marquee selection was made for. */
+  /** Drag a card, or the whole group if it is part of one. */
   #startNodeDrag(e, id) {
     const selection = this.env.selection;
     const group = selection.has(id) && selection.nodes.size > 1
@@ -765,25 +724,22 @@ export class CanvasView {
       },
       up: () => {
         if (moved) this.env.model.touch();
-        // no dragging happened — an ordinary click on a node of a group selects
-        // that one alone
+        // nothing moved: a click on a grouped node selects just that node
         else if (group.length > 1 && !e.shiftKey) selection.set({ type: "node", id });
       },
     });
   }
 
   /**
-   * The selection marquee (the right button): everything it touched goes into
-   * the group selection — from there it is moved and deleted at once. Shift
-   * adds to what is already selected.
+   * The selection marquee (right button): everything it touches is selected,
+   * to be moved or deleted together. Shift adds to the selection.
    */
   #startMarquee(e) {
     const box = el("div", "sf-marquee");
     this.host.append(box);
     const keep = e.shiftKey ? [...this.env.selection.nodes] : [];
-    // the former selection is cleared AT THE START of the gesture, not at the
-    // end: while the marquee is being dragged, only what will end up in the new
-    // selection should be highlighted
+    // clear the old selection when the gesture starts, so only the new one is
+    // highlighted while dragging
     if (!e.shiftKey && this.env.selection.nodes.size) this.env.selection.clear();
     let moved = false;
 
@@ -834,7 +790,7 @@ export class CanvasView {
     }).map((node) => node.id);
   }
 
-  /** Dragging an area by its label moves all of its nodes at once. */
+  /** Dragging a region by its label moves all its nodes. */
   #startRegionDrag(e, regionKey) {
     const region = this.regions?.find((r) => r.key === regionKey);
     if (!region) return;
@@ -875,15 +831,15 @@ export class CanvasView {
 
   // ------------------------------------------------ targets under the cursor
 
-  /** The node under the event point (elementsFromPoint — the cursor can be over
-   * a temporary edge or an area label). */
+  /** The node under the pointer (elementsFromPoint, since a temporary edge or
+   * a region label may be on top). */
   #nodeAt(ev) {
     return document.elementsFromPoint(ev.clientX, ev.clientY)
       .map((x) => x.closest?.(".sf-node"))
       .find(Boolean)?.dataset.id ?? null;
   }
 
-  /** The order edge under the event point. */
+  /** The order edge under the pointer. */
   #edgeAt(ev) {
     const hit = document.elementsFromPoint(ev.clientX, ev.clientY)
       .find((x) => x.classList?.contains("sf-edge-hit"));
@@ -892,7 +848,7 @@ export class CanvasView {
       : null;
   }
 
-  /** The world coordinates of a drop: the card lands centred under the cursor. */
+  /** World coordinates for a drop, centring the card under the cursor. */
   #dropPos(ev) {
     const point = this.view.toWorld(ev.clientX, ev.clientY, this.host.getBoundingClientRect());
     return { x: point.x - NODE_MIN_W / 2, y: point.y };
@@ -909,9 +865,7 @@ export class CanvasView {
 
   // ---------------------------------------------- hints while connecting
 
-  /** The "wire in hand" mode: the canvas explains what to do next and
-   * highlights the source — otherwise, after attention has wandered, it is
-   * unclear where the line is coming from. */
+  /** Wire-in-hand mode: show what to do next and highlight the source. */
   #beginConnecting(fromId, hint) {
     this.host.classList.add("sf-connecting");
     this.#markSource(fromId);
@@ -937,10 +891,8 @@ export class CanvasView {
   }
 
   /**
-   * Highlighting what the drop will land on right now. The card the wire comes
-   * FROM is not a target: a port pointing at its own node is a loop with no way
-   * out, and the drop has always refused it — the highlight used to promise
-   * otherwise.
+   * Highlight where a drop would land. The source card is not a target: a port
+   * pointing at its own node is a loop with no way out.
    */
   #hotTarget(ev, withEdges = false, exclude = null) {
     for (const node of this.nodesEl.querySelectorAll(".sf-drop-hot")) {
@@ -949,7 +901,7 @@ export class CanvasView {
     const at = this.#nodeAt(ev);
     const id = at === exclude ? null : at;
     if (id) this.#nodeElById(id)?.classList.add("sf-drop-hot");
-    // over the source card there is nothing to drop on, edges included
+    // over the source card nothing is a target, edges included
     this.#markEdgeHot(!at && withEdges ? this.#edgeAt(ev) : null);
   }
 
@@ -964,8 +916,7 @@ export class CanvasView {
   #showEdgePlus(hit) {
     const length = hit.isConnected ? hit.getTotalLength() : 0;
     const at = length ? hit.getPointAtLength(length / 2) : null;
-    // an edge of zero length (a node onto itself) gives no midpoint — without
-    // this check the buttons drove off to the origin of the world
+    // a zero-length edge has no midpoint; without this the buttons fly to (0, 0)
     if (!Number.isFinite(at?.x) || !Number.isFinite(at?.y)) { this.#hideEdgePlus(); return; }
     this.edgeToolsEl.style.left = `${at.x}px`;
     this.edgeToolsEl.style.top = `${at.y}px`;
@@ -1008,24 +959,21 @@ export class CanvasView {
       cancel: () => { temp.remove(); this.#endConnecting(); },
       up: (ev) => {
         temp.remove();
-        // a click without dragging — take the wire "on hold"
+        // a click without dragging holds the wire
         if (!moved) { this.#arm(fromId, portIndex, origin, port.label); return; }
         this.#endConnecting();
         const targetId = this.#nodeAt(ev);
         if (!targetId) this.#offerCreate(ev, fromId, portIndex);
         else if (targetId !== fromId) this.env.model.connect(fromId, portIndex, targetId);
-        // dropped back on the card it came from: refused, and said out loud —
-        // silence reads as "the drop missed" and is tried again
+        // dropped on its own card: refused, and said so
         else this.flashHint(t("canvas.noSelfLink"));
       },
     });
   }
 
   /**
-   * A click on a port leaves the wire in hand until the next click. It is no
-   * less needed than dragging: a link across half the canvas with the button
-   * held down is a miss on a touchpad, and here one can scroll and zoom out
-   * between the two clicks.
+   * A click on a port holds the wire until the next click: a long drag is hard
+   * on a touchpad, and the view can be scrolled and zoomed in between.
    */
   #arm(fromId, portIndex, origin, label) {
     this.#disarm();
@@ -1044,9 +992,8 @@ export class CanvasView {
     this.#endConnecting();
   }
 
-  /** The wire was dropped into the void: a "what to create here" menu — and
-   * what is created is connected to the port right away. This is the main way
-   * of assembling a graph. */
+  /** A wire dropped on empty space: offer what to create, connected to the
+   * port. The main way of building a graph. */
   #offerCreate(ev, fromId, portIndex) {
     this.#createMenu(ev, {
       title: t("canvas.createConnected"),
@@ -1057,7 +1004,7 @@ export class CanvasView {
     });
   }
 
-  /** Inserting into an edge: A→B becomes A→N→B. */
+  /** Insert into an edge: A→B becomes A→N→B. */
   #offerInsert(ev, fromId, portIndex) {
     this.#createMenu(ev, {
       title: t("canvas.insertOnEdge"),
@@ -1067,9 +1014,9 @@ export class CanvasView {
     });
   }
 
-  /** Dragging a variable from a data output: on a receiving node a menu of
-   * connection options opens (kind.acceptVariable), in empty space — first a
-   * "what to create" menu, then the same connection menu on the new node. */
+  /** Drag a variable from a data output: on a node, a menu of ways to connect
+   * it (kind.acceptVariable); on empty space, first what to create, then the
+   * same menu on the new node. */
   #startDataDrag(e, fromId, outIndex) {
     const node = this.env.model.node(fromId);
     if (!node) return;
@@ -1093,9 +1040,8 @@ export class CanvasView {
           hint: t("canvas.varToNode.hint"),
           allow: (spec) => spec.type !== "entry",
           pick: (spec) => {
-            // the reader is put into the flow after the writer, or it would see
-            // the variable on paper only: in a shared frame you read what was
-            // written ABOVE you in execution order
+            // the reader goes after the writer in the flow: in a shared frame a
+            // node reads what was written before it in execution order
             const free = freePortIndex(node);
             const created = free >= 0
               ? this.env.model.createConnected(fromId, free, spec, this.#dropPos(ev))
@@ -1133,7 +1079,7 @@ export class CanvasView {
 
   // ------------------------------------------------- a drop from the palette
 
-  /** Highlighting the target while a node is dragged from the palette. */
+  /** Highlight the target while a palette node is dragged. */
   dropHint(clientX, clientY, spec) {
     const ev = { clientX, clientY };
     if (!this.#inside(ev)) { this.#endConnecting(); return; }
@@ -1147,10 +1093,8 @@ export class CanvasView {
   }
 
   /**
-   * A drop from the palette: on an edge — insert into it, on a node — attach to
-   * its free port, on empty space — simply create here. A node from the palette
-   * lands already connected, because an unconnected card is work postponed, not
-   * a result.
+   * A drop from the palette: on an edge, insert; on a node, attach to its free
+   * port; on empty space, create. The node arrives connected.
    */
   dropCreate(spec, clientX, clientY) {
     const ev = { clientX, clientY };
@@ -1175,7 +1119,7 @@ export class CanvasView {
 
   // -------------------------------------------------------------- menu
 
-  /** The "what to create" menu: node types and registry stages, with a search. */
+  /** The "what to create" menu: node types and stages, with search. */
   #createMenu(ev, { title, hint, allow, pick }) {
     const graph = this.env.model.graph;
     const items = [];
@@ -1183,7 +1127,7 @@ export class CanvasView {
     for (const kind of KINDS.values()) {
       if (kind === StageKind) continue; // a stage is picked by name, below
       const spec = { type: kind.type };
-      // a second entry is a validation error right away: do not offer it at all
+      // a second entry node would be invalid, so it is not offered
       if (kind.type === "entry" && graph.nodes.some((n) => n.type === "entry")) continue;
       if (allow && !allow(spec)) continue;
       items.push({

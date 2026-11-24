@@ -1,22 +1,18 @@
 /**
- * Connecting nodes: the graph operations the mouse performs.
+ * Connecting nodes: the graph operations behind the mouse gestures.
  *
- * A node editor is not assembled by "add a node — open a panel — type the id
- * of the neighbour" but by movement: pull a wire out of a port, let go, pick
- * what to create there. For this to work the same way for every kind of node,
- * two things have to be known about a node that are not in the JSON:
+ * Two things about a node are needed that the JSON does not say:
+ *  - which port continues the flow (`continuationIndex`): inserted into an
+ *    edge, the node takes over the edge's target on that port;
+ *  - which port is free (`freePortIndex`): the next node added while this one
+ *    is selected attaches there.
  *
- *  - which port CONTINUES the flow (`continuationIndex`) — the new node picks
- *    up whatever went on through it when it is inserted into an edge;
- *  - which port of a node is FREE (`freePortIndex`) — the next node added with
- *    this one selected attaches to it.
+ * Both come from the node kind (`orderPorts` with `continuationKey` /
+ * `appendKey`, matched by port `key`), so a new node type needs no changes
+ * here or on the canvas.
  *
- * Both answers come from the node kind itself (`orderPorts` + `continuationKey`
- * / `appendKey`, matched by the stable port `key`, never by the visible label),
- * so a new node type requires no changes either here or on the canvas.
- *
- * The functions are pure: they take a graph, change it, and know nothing about
- * the DOM or the model — which is why they are checked in `tests/wiring.mjs`.
+ * The functions are pure: they change a graph and know nothing of the DOM or
+ * the model (see `tests/wiring.mjs`).
  */
 import { nodeLayout } from "./geometry.js";
 import { kindOf } from "./kinds.js";
@@ -33,12 +29,10 @@ function nodeById(graph, id) {
 }
 
 /**
- * The port through which a node continues the execution flow: `next`, and for
- * branching kinds the one that leads down the main road (`then` for condition,
- * `body` for try). It is the one that picks up the former target when the node
- * is inserted into an edge: insert a `try` between A and B and B becomes the
- * body of the block, not what follows it. `-1` — there is nothing to continue
- * with (terminal).
+ * The port that continues the flow: `next`, or the main road of a branching
+ * kind (`then` of a condition, `body` of a try). Inserted into an edge, the
+ * node takes the old target on this port, so a `try` inserted between A and
+ * B gets B as its body. `-1` if there is none (terminal).
  */
 export function continuationIndex(node) {
   const kind = kindOf(node);
@@ -55,15 +49,14 @@ export function canContinue(type, extra = {}) {
 }
 
 /**
- * The port the next node should sensibly attach to: a free continuation,
- * otherwise any unoccupied port, otherwise a list button (`+ case`,
- * `+ branch`, `+ except`) — that one creates a free slot itself. `-1` — there
- * is nothing to attach to.
+ * The port the next node should attach to: a free continuation, else any free
+ * port, else a list button (`+ case`, `+ branch`, `+ except`) that makes a new
+ * slot. `-1` if there is none.
  */
 export function freePortIndex(node) {
   const ports = portsOf(node);
-  // the node kind says itself what it is missing first: an empty `parallel`
-  // needs a branch, not a `next` after the merge
+  // the kind says what it needs first: an empty `parallel` needs a branch,
+  // not a `next`
   const wanted = ports.findIndex((port) => port.key === kindOf(node).appendKey(node));
   if (wanted >= 0 && (ports[wanted].add ? ports[wanted].drop : !ports[wanted].get?.())) return wanted;
   const idle = ports.findIndex((port) => !port.add && port.set && !port.get?.());
@@ -71,9 +64,8 @@ export function freePortIndex(node) {
   return ports.findIndex((port) => port.add && port.drop);
 }
 
-/** Links a port of a node with a target; a list port (`+ case`) creates a new
- * list item. Works with a node that is not in the graph yet — inserting into
- * an edge links the new node before it gets there. */
+/** Connect a port to a target; a list port (`+ case`) adds a list item. Works
+ * on a node not yet in the graph, as when inserting into an edge. */
 export function connectNode(node, portIndex, targetId) {
   const port = node && portsOf(node)[portIndex];
   if (!port) return false;
@@ -83,19 +75,19 @@ export function connectNode(node, portIndex, targetId) {
   return true;
 }
 
-/** The same, by the node id in the graph. */
+/** `connectNode` by node id. */
 export function connectPort(graph, fromId, portIndex, targetId) {
   return connectNode(nodeById(graph, fromId), portIndex, targetId);
 }
 
-/** Where the port leads right now (a list button leads nowhere). */
+/** Where a port leads now (a list button leads nowhere). */
 export function portTarget(graph, fromId, portIndex) {
   const node = nodeById(graph, fromId);
   return node ? portsOf(node)[portIndex]?.get?.() ?? null : null;
 }
 
-/** The size of a node (without the description — its size depends on the
- * specs, and a minimal estimate is enough for the layout). */
+/** A node's size without its description, which depends on specs; a lower
+ * bound is enough for placement. */
 function sizeOf(node) {
   const { width, height } = nodeLayout(node);
   return { width, height };
@@ -113,9 +105,8 @@ function overlaps(a, b, pad = 16) {
 }
 
 /**
- * Shifts a node to the right while it lies on top of somebody else. A new node
- * appears where it was called for (under its predecessor, at the cursor), and
- * it must not cover a neighbour — otherwise it is "added and lost".
+ * Move a node right until it no longer covers another, so a new node does not
+ * hide its neighbour.
  */
 export function avoidOverlap(graph, node) {
   const others = graph.nodes.filter((n) => n !== node).map(boxOf);
@@ -130,14 +121,9 @@ export function avoidOverlap(graph, node) {
 }
 
 /**
- * Frees space under the node `afterId`: both the tail of the chain (everything
- * reachable from it in order) and everything that simply lies below move down
- * by `amount`.
- *
- * The second condition is not redundant: the tail is what an insertion moves
- * by meaning, but the new node can also bump into an unrelated node that
- * happens to be under it on the canvas. A whole band moves, not a branch, so
- * the relative placement of neighbours is preserved — unlike pushing sideways.
+ * Make room below `afterId`: move down by `amount` both the chain after it
+ * (everything reachable in order) and anything else lying below it. Moving the
+ * whole band keeps neighbours' relative positions.
  */
 export function pushDown(graph, afterId, amount, keep = new Set()) {
   if (amount <= 0) return;
@@ -151,9 +137,8 @@ export function pushDown(graph, afterId, amount, keep = new Set()) {
 }
 
 /**
- * Inserts a ready node into an edge: A→B becomes A→N→B. The node stands
- * between them, and the tail of the graph moves down far enough for it to fit.
- * Returns false if the node has nothing to continue the flow with.
+ * Insert a node into an edge: A→B becomes A→N→B, and the rest of the graph
+ * moves down to make room. Returns false if the node cannot continue the flow.
  */
 export function insertBetween(graph, fromId, portIndex, node, spacing = {}) {
   const { gapY } = { ...GAP, ...spacing };
@@ -182,7 +167,7 @@ export function insertBetween(graph, fromId, portIndex, node, spacing = {}) {
   return true;
 }
 
-/** Places a node after `fromId` — below it, without climbing on neighbours. */
+/** Place a node below `fromId` without covering its neighbours. */
 export function placeAfter(graph, fromId, node, spacing = {}) {
   const { gapY } = { ...GAP, ...spacing };
   const source = nodeById(graph, fromId);

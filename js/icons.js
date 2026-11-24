@@ -1,32 +1,29 @@
 /**
  * Node icons: a glyph, a link to an SVG file, or inline SVG markup.
  *
- * The shapes the `icon` value of a stage docstring can take:
- *   "＋"                                  — a glyph (a character or an emoji);
- *   "/icons/globe.svg", "https://…/x.svg" — a link to a file;
- *   "data:image/svg+xml;…"                — a data URI;
- *   "<svg …>…</svg>"                      — markup right in the docstring.
+ * The `icon` of a stage spec can be:
+ *   "＋"                                  a glyph (a character or an emoji)
+ *   "/icons/globe.svg", "https://…/x.svg" a link to a file
+ *   "data:image/svg+xml;…"                a data URI
+ *   "<svg …>…</svg>"                      markup in the docstring
  *
- * SECURITY: foreign SVG never reaches the DOM as markup — only as an
- * `<img src>` or a CSS mask. In both cases the browser does not execute
- * scripts inside the SVG, so an icon from an arbitrary stage registry cannot
- * become XSS. Inline markup is wrapped into a data URI for that, and schemes
- * such as `javascript:` are cut off by an allowlist.
+ * Security: SVG from a stage registry is never inserted as markup, only as an
+ * `<img src>` or a CSS mask, where the browser does not run scripts. Inline
+ * markup is turned into a data URI, and schemes such as `javascript:` are
+ * refused by an allowlist.
  *
- * The `icon_mono` flag in a stage spec draws the icon as a mask in the node
- * color — that is how monochrome sets (lucide, feather, tabler) fit the theme;
- * without it the picture is shown as it is, keeping its own colors (logos).
+ * `icon_mono` draws the icon as a mask in the node color (for monochrome sets
+ * such as lucide); without it the picture keeps its own colors.
  *
- * An absolute path (`/icons/globe.svg`) is resolved against the BACKEND rather
- * than against the page: it is the backend that declared the icon and the
- * backend that serves it, while the editor is static files on another origin.
+ * An absolute path (`/icons/globe.svg`) is resolved against the backend, which
+ * serves the icon, not against the page.
  */
 
 const URL_PREFIXES = ["https://", "http://", "/", "./", "../"];
 const DATA_SVG = "data:image/svg+xml";
 
-/** Parses an icon value: {type: "glyph"|"url", value} or null. `base` is the
- * backend address an absolute path belongs to. */
+/** Parse an icon value into {type: "glyph"|"url", value}, or null. `base` is
+ * the backend address an absolute path is resolved against. */
 export function resolveIcon(icon, base = "") {
   const raw = String(icon ?? "").trim();
   if (!raw) return null;
@@ -38,14 +35,13 @@ export function resolveIcon(icon, base = "") {
   if (URL_PREFIXES.some((prefix) => raw.startsWith(prefix))) {
     return { type: "url", value: base && raw.startsWith("/") ? `${base}${raw}` : raw };
   }
-  // everything else (including javascript:, which does not get here as a URL)
-  // is shown as text — it cannot possibly be executed
+  // anything else (`javascript:` included) is shown as text, never executed
   return { type: "glyph", value: raw };
 }
 
 /**
- * Fills the icon container. `fallback` is shown when there is no icon or the
- * picture did not load (a broken link, being offline, a blocker).
+ * Fill the icon container. `fallback` is shown when there is no icon or the
+ * picture fails to load.
  */
 export function paintIcon(host, icon, { mono = false, fallback = "", base = "" } = {}) {
   host.textContent = "";
@@ -62,7 +58,7 @@ export function paintIcon(host, icon, { mono = false, fallback = "", base = "" }
     return host;
   }
   if (mono) {
-    // a mask: the shape comes from the SVG, the color from the node (--kind-color)
+    // a mask: the shape comes from the SVG, the color from the node
     const escaped = resolved.value.replace(/["\\]/g, (ch) => `\\${ch}`);
     host.style.setProperty("--icon-url", `url("${escaped}")`);
     host.classList.add("sf-icon-mask");

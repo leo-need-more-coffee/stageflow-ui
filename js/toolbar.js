@@ -17,7 +17,7 @@ function el(tag, className, text) {
 }
 
 export class Toolbar {
-  /** @param editor — the Editor facade (uses its public API) */
+  /** @param editor the Editor facade (its public API is used) */
   constructor(host, editor) {
     this.host = host;
     this.editor = editor;
@@ -31,14 +31,9 @@ export class Toolbar {
     brand.append(el("span", "sf-brand-mark", "◇"), el("span", "", "StageFlow"));
     this.host.append(brand);
 
-    // A menu bar instead of a row of buttons: the bar used to hold fourteen
-    // controls of four different meanings — document, edit, view, run — and
-    // finding the right one meant reading the whole bar. Now the meaning is
-    // visible from the menu name, and the items themselves carry the hotkeys,
-    // so the bar stops being the only way to reach them.
-    // keyed by section name, not by title: the title is what a reader sees and
-     // changes with the language, while `openMenuName` and the neighbour walk
-     // have to keep working across a redraw
+    // A menu bar (document, edit, view, run) rather than a row of fourteen
+    // buttons; items show their shortcuts. Sections are keyed by name, not by
+    // the translated title, so `openMenuName` survives a redraw
     this.builders = new Map([
       ["file", () => this.#fileItems()],
       ["edit", () => this.#editItems()],
@@ -58,11 +53,9 @@ export class Toolbar {
     this.#refreshOpenMenu();
   }
 
-  /** The bar is redrawn on every change — an edit of the graph, a run tick, the
-   * specs loading. An open section survives that: the buttons are new, so the
-   * menu moves to a new anchor and the items are updated in place (see
-   * `Menu.setItems`). Closing it here would mean the "Run" section slams shut
-   * under the hand during a run. */
+  /** The bar is redrawn on every change (an edit, a run event, specs
+   * loading). An open section stays open: it moves to the new button and its
+   * items are updated in place (see `Menu.setItems`). */
   #refreshOpenMenu() {
     if (!this.menu || !this.openMenuName) return;
     const button = this.buttons.get(this.openMenuName);
@@ -79,10 +72,8 @@ export class Toolbar {
 
   #menuButton(title) {
     const button = el("button", "sf-menubtn", t(`bar.${title}`));
-    // A click closes a section only if it was opened BY A CLICK: a menu opened
-    // by hovering would otherwise slam shut on the very press that was meant to
-    // pin it (first pointerenter opens it, then click closes it — and the
-    // section cannot be opened at all).
+    // a click closes a section only if a click opened it; otherwise a section
+    // opened by hover would close on the click meant to pin it
     button.onclick = () => {
       if (this.openMenuName === title) {
         if (this.openedByHover) this.openedByHover = false;
@@ -91,8 +82,7 @@ export class Toolbar {
       }
       this.#openMenu(title);
     };
-    // an open menu switches on hover, as in any menu bar: otherwise every move
-    // between sections is a close and an open
+    // while a menu is open, hovering another section switches to it
     button.onpointerenter = () => {
       if (this.openMenuName && this.openMenuName !== title) {
         this.#openMenu(title);
@@ -115,7 +105,7 @@ export class Toolbar {
     this.menu = openMenu(this.editor.container, {
       x: rect.left - 4, y: rect.bottom - 2,
       items: build(), anchor, closeOnOutside: true,
-      // left/right arrows walk the sections without closing the menu bar
+      // left/right arrows move between sections
       onSide: (delta) => this.#openMenu(this.#neighbour(title, delta)),
       onClose: () => {
         if (this.openMenuName === title) {
@@ -127,19 +117,16 @@ export class Toolbar {
     });
   }
 
-  /** The highlight of the open section lives on a button, and the bar gets
-   * redrawn: clearing it on the button that opened the menu is too late — that
-   * button is no longer in the DOM, and the section would stay highlighted
-   * forever. So the highlight is always set by one method and over the CURRENT
-   * buttons. */
+  /** Highlight the open section's button. The bar is redrawn, so the
+   * highlight is always set here, on the current buttons; clearing it on the
+   * old button would be too late. */
   #markOpen(title) {
     for (const [name, button] of this.buttons) {
       button.classList.toggle("sf-menubtn-open", name === title);
     }
   }
 
-  /** The neighbouring section, wrapping around: right of the last one is the
-   * first. */
+  /** The neighbouring section, wrapping around. */
   #neighbour(title, delta) {
     const titles = [...this.builders.keys()];
     const index = titles.indexOf(title);
@@ -202,9 +189,8 @@ export class Toolbar {
     ];
   }
 
-  /** The data layer gets three items with a tick rather than one toggle that
-   * cycles: in a menu that closes after a choice, "cycling" would mean opening
-   * it three times to reach the far mode. */
+  /** The data-wire modes as three ticked items rather than one cycling
+   * toggle, which in a closing menu would take up to three openings. */
   #viewItems() {
     const editor = this.editor;
     const dataModes = ["off", "focus", "all"];
@@ -234,9 +220,8 @@ export class Toolbar {
     ];
   }
 
-  /** The pace lives as items right in the run section rather than as a separate
-   * setting: "show what is happening" is decided where "Run" is pressed, and on
-   * a running session it changes on the fly (see `Editor.setRunDelay`). */
+  /** The run pace as items in the Run section, next to Run itself; it changes
+   * a running session too (see `Editor.setRunDelay`). */
   #runItems() {
     const editor = this.editor;
     const { runner } = editor;
@@ -255,17 +240,16 @@ export class Toolbar {
       { label: t("run.stop"), disabled: !active, apply: () => runner.stop() },
       { separator: true },
       { heading: t("run.delay") },
-      // not every pace has something to explain — "1 s" explains itself — so the
-      // hint is set only where the catalog has one, never as a bare key
+      // only some paces have a hint ("1 s" needs none); set it only where the
+      // catalog has one
       ...DELAY_PRESETS.map(([value, key]) => ({
         label: t(`delay.${key}`),
         ...(has(`delay.${key}.hint`) ? { hint: t(`delay.${key}.hint`) } : {}),
         checked: editor.runDelay === value,
         apply: () => editor.setRunDelay(value),
       })),
-      // a pace typed into the run dialog is shown as an item of its own:
-      // otherwise the menu would carry no tick at all and the current pace
-      // would look like "none", though the run will go exactly at it
+      // a pace typed in the run dialog gets its own item, so the current pace
+      // is always ticked
       ...(DELAY_PRESETS.some(([value]) => value === editor.runDelay) ? [] : [{
         label: delayLabel(editor.runDelay), hint: t("delay.custom.hint"),
         checked: true, apply: () => {},
@@ -273,10 +257,8 @@ export class Toolbar {
     ];
   }
 
-  /** The languages with a catalog, as ticked items.
-   *
-   * Read from `i18n`, which read them off the disk: the editor names no
-   * language of its own, so adding one is adding a file. */
+  /** The languages with a catalog, as ticked items. The list comes from
+   * `i18n`; adding a language is adding a file. */
   #languageItems() {
     const all = locales();
     return Object.entries(all).map(([tag, name]) => ({
@@ -285,8 +267,7 @@ export class Toolbar {
     }));
   }
 
-  /** The state of the run on the right of the bar: while a session is going,
-   * this is the only thing worth keeping in sight permanently. */
+  /** The run state at the right of the bar, kept in sight during a session. */
   #runIndicator() {
     const { runner } = this.editor;
     const wrap = el("div", "sf-runstate");
@@ -401,8 +382,8 @@ export class Toolbar {
     modal.body.append(area, row);
   }
 
-  /** The pipeline sections that have no visual representation on the canvas:
-   * types / variables / metadata — edited as JSON. */
+  /** The pipeline sections with no canvas representation (types, variables,
+   * metadata), edited as JSON. */
   #settingsModal() {
     const modal = new Modal(t("settings.title")).open();
     const { model } = this.editor;
@@ -438,14 +419,11 @@ export class Toolbar {
   }
 
   /**
-   * The secret store: the place where the API keys live — apart from the graph
-   * and without showing the values.
+   * The secret store: API keys kept apart from the graph.
    *
-   * The list is written as "name · source · ••••••••": a saved value is never
-   * shown again to anybody, it can only be replaced or deleted. What was typed
-   * can be checked before saving — with the eye next to the input; afterwards
-   * there is no point, and there may well be someone to show it to over the
-   * shoulder.
+   * Listed as "name · source · ••••••••": a saved value is never shown again,
+   * only replaced or deleted. A value can be revealed while typing it, to
+   * catch typos before saving.
    */
   #secretsModal() {
     const modal = new Modal(t("secrets.title")).open();
@@ -470,9 +448,7 @@ export class Toolbar {
                           t(env ? "secrets.from.env" : "secrets.from.browser"));
         source.title = t(env ? "secrets.from.env.hint" : "secrets.from.browser.hint");
         row.append(source);
-        // a server-side secret does not belong to the editor: it cannot be
-        // deleted from here, and rightly so — it was not the editor that
-        // created it
+        // a server-side secret was not created here and cannot be deleted here
         const drop = el("button", "sf-tag-x", "×");
         drop.title = t(env ? "secrets.drop.env" : "secrets.drop");
         drop.disabled = env;
@@ -499,8 +475,7 @@ export class Toolbar {
     value.placeholder = t("secrets.value");
     value.spellcheck = false;
     value.autocomplete = "off";
-    // the eye is only for the value BEING TYPED: a typo has to be seen before
-    // the key goes into the store, and afterwards there is nothing to show
+    // the eye reveals only the value being typed
     const peek = el("button", "sf-btn sf-btn-small", t("common.show"));
     peek.type = "button";
     peek.title = t("secrets.peek");
@@ -532,15 +507,13 @@ export class Toolbar {
   }
 
   /**
-   * Changing the ADDRESS: the same connection screen as at the start, and a
-   * reload afterwards. Reached from the connection dialog, which handles the
-   * credential and the plan itself, in place.
+   * Change the backend address: the start-up connection screen, then a
+   * reload. Reached from the connection dialog, which changes the credential
+   * and plan in place.
    *
-   * A reload rather than a live swap on purpose: the address is not a setting
-   * but the ground everything stands on — the stage registry, the running
-   * session, the names of the environment secrets. Swapping it under a live
-   * session would leave a graph built from the stages of one backend with a run
-   * belonging to another.
+   * A reload because everything depends on the address (stages, the running
+   * session, secret names); swapping it live would leave a graph of one
+   * backend's stages with another backend's run.
    */
   #changeBackend() {
     connectBackend({
@@ -553,9 +526,8 @@ export class Toolbar {
         location.reload();
         return;
       }
-      // the same address with a different credential is not a new backend and
-      // must not be a reload — but it must not be dropped either, which is
-      // what happened while this only compared URLs
+      // the same address with a new credential is not a new backend: no
+      // reload, but the credential is applied
       await this.editor.setCredential(backend.auth).catch(() => {});
     });
   }
@@ -571,25 +543,19 @@ export class Toolbar {
   }
 
   /**
-   * The connection: the address, the credential and the plan in one place.
+   * The connection dialog: address, credential and plan in one place.
    *
-   * One dialog rather than three menu items, because they are one question —
-   * "what am I talking to, as whom, and seen how" — and because the editor is
-   * meant to be usable as a published page against somebody else's backend.
-   * On that page nothing can be arranged in advance: the address, the token
-   * and the tier all have to be typed into the interface, and changed there
-   * when they turn out to be wrong.
+   * One dialog because they answer one question (what am I talking to, as
+   * whom, seeing which plan), and because a published editor used against
+   * someone else's backend has to have all three set and corrected here.
    *
-   * Only the address reloads. The credential and the plan are re-asked in
-   * place: the backend is the same backend and the graph is the same graph,
-   * so a reload would lose the work and answer nothing.
+   * Only the address reloads; the credential and plan are applied in place,
+   * since the backend and the graph stay the same.
    */
   openConnection() {
     const modal = new Modal(t("conn.title")).open();
-    // every section reads from the backend and from what it answered, so a
-    // change in one of them makes the others stale — the whole body is drawn
-    // again rather than patched, and `notice` carries the one thing a redraw
-    // would otherwise swallow: what just happened
+    // every section depends on the backend's answers, so the whole body is
+    // redrawn after a change; `notice` carries what just happened
     const draw = (notice = null) => {
       modal.body.textContent = "";
       this.#connAddress(modal);
@@ -618,7 +584,7 @@ export class Toolbar {
     const section = this.#connSection(modal, t("conn.backend"), change);
     section.append(el("div", "sf-conn-url", backend.url));
     section.append(el("p", "sf-muted", t("conn.backend.note")));
-    // the one failure of a published editor that the browser reports worst
+    // the failure browsers report worst for a published editor
     if (typeof location !== "undefined" && location.protocol === "https:") {
       section.append(el("p", "sf-muted", t("conn.backend.https")));
     }
@@ -635,8 +601,7 @@ export class Toolbar {
     header.placeholder = "Authorization";
     header.value = backend.auth.header;
     const value = el("input");
-    // a password field: a token has no business being on screen while
-    // somebody is demonstrating a graph
+    // a password field keeps the token off screen during a demo
     value.type = "password";
     value.spellcheck = false;
     value.autocomplete = "off";
@@ -661,7 +626,7 @@ export class Toolbar {
         const count = await this.editor.setCredential({
           header: header.value, value: value.value,
         });
-        // the plan, the node types and the limits all just changed with it
+        // plan, node types and limits may all have changed
         redraw({ kind: "ok", text: value.value.trim()
           ? tn("conn.auth.accepted", count)
           : tn("conn.auth.cleared", count) });
@@ -695,8 +660,7 @@ export class Toolbar {
       };
       list.append(row);
     };
-    // "mine" first: the way back from a preview must not be a name one has to
-    // remember, and the backend will not say which of the names it is
+    // "mine" first, so returning from a preview needs no plan name
     pick(null, t("conn.plan.mine"),
          own ? t("conn.plan.mine.is", { plan: own }) : t("conn.plan.mine.unknown"));
     for (const plan of capabilities.plans) {

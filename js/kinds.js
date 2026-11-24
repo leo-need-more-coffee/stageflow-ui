@@ -1,24 +1,18 @@
 /**
- * Node kinds — the frontend mirror of the NODE_TYPES registry of the
- * StageFlow core.
+ * Node kinds: the editor's mirror of the core's node types.
  *
- * Every kind is a class with static members (nodes are raw JSON objects of the
- * pipeline): defaults, a caption, TWO sorts of connectors, and inspector
- * fields.
+ * Each kind is a class of static members over raw JSON nodes: defaults, a
+ * caption, two kinds of connectors, and inspector fields.
  *
- * - orderPorts(node) — control (next/then/else/cases/branches/catch): the
- *   explicit edges of the graph, edited by dragging;
- * - dataIns(node) / dataOuts(node) — data flows: which frame variables the
- *   node reads and writes. Data edges are not stored in the JSON — they are
- *   derived by matching writer.variable == reader.variable.
+ * - orderPorts(node): control edges (next/then/else/cases/branches/catch),
+ *   stored in the JSON and edited by dragging;
+ * - dataIns(node) / dataOuts(node): the frame variables the node reads and
+ *   writes. Data edges are not stored; they are derived by matching names.
  *
- * Inspector fields are declarative descriptors — forms instead of hand-written
- * JSON.
+ * Inspector fields are declarative descriptors.
  *
- * Every order port carries a `key` — a stable identifier (`next`, `then`,
- * `add-case`, …) that does not depend on the visible label. The wiring code
- * (`wiring.js`) and the canvas ask for ports by that key, so translating a
- * label never breaks connecting nodes.
+ * Every order port has a stable `key` (`next`, `then`, `add-case`, ...),
+ * independent of its translated label; wiring.js and the canvas use the key.
  */
 
 import { categoryColor } from "./colors.js";
@@ -37,7 +31,7 @@ export function kindOf(node) {
 
 // ---------------------------------------------------------------- helpers
 
-/** Removing a list item by reference (indices shift after a splice). */
+/** Remove a list item by identity (indices shift after a splice). */
 function dropItem(list, item) {
   const idx = list.indexOf(item);
   if (idx >= 0) list.splice(idx, 1);
@@ -47,19 +41,16 @@ function exists(graph, id) {
   return (graph.nodes ?? []).some((n) => n.id === id);
 }
 
-/** @param what the port, named as the JSON names it (`next`, `body`) or, where
- * there is no such name, already translated prose */
+/** @param what the port as named in the JSON (`next`, `body`), or translated
+ * text where there is no such name */
 function refIssue(graph, id, what) {
   return id && !exists(graph, id) ? [t("issue.notInGraph", { what, id })] : [];
 }
 
-/** References to variables inside a CEL expression.
- *
- * There are two forms of access and both have to be seen: the dotted one
- * (`vars.x`) is allowed by CEL only for ASCII identifiers, so a name such as
- * `итог` is addressed by index (`vars['итог']`). Missing the index form would
- * mean a data port that is not on the card — exactly the kind of loss
- * `tests/ports.mjs` is written for. */
+/** Variables referenced in a CEL expression, in both forms: `vars.x`, and
+ * `vars['итог']` for names that are not ASCII identifiers (CEL allows the
+ * dotted form only for those). Missing the index form would drop a data port
+ * (see `tests/ports.mjs`). */
 export function celRefs(expr) {
   const refs = [];
   const pattern = /\bvars(?:\.([^\W\d]\w*)|\[\s*['"]([^'"]+)['"]\s*\])/gu;
@@ -69,8 +60,8 @@ export function celRefs(expr) {
   return refs;
 }
 
-/** A cyclic dependency between the variables of one entry node: binding goes
- * by dependencies, so a cycle cannot be computed in any order. */
+/** A dependency cycle between one entry node's variables: they are bound in
+ * dependency order, so a cycle cannot be computed. */
 function cycleIssues(rows) {
   const own = new Set(rows.map((r) => r.name).filter(Boolean));
   const deps = new Map(rows
@@ -92,13 +83,10 @@ function cycleIssues(rows) {
   return stuck.length ? [t("issue.varCycle", { names: stuck.join(", ") })] : [];
 }
 
-/** A literal from a text input: number/bool/null/JSON, otherwise a string.
+/** A literal from a text input: a number, bool, null or JSON, else a string.
  *
- * Trimming happens only for the attempt to parse JSON; a string is returned AS
- * TYPED. Otherwise a value of nothing but spaces (`separator: " "` of
- * ConcatStage — a perfectly sensible setting) turned into an empty string,
- * silently and on every opening of the panel. It can also be typed as a JSON
- * string (`" "`), but a typed space must not disappear. */
+ * Only the JSON attempt trims; a string is returned as typed, so a value of
+ * spaces (ConcatStage's `separator: " "`) is not turned into an empty string. */
 export function parseLiteral(text) {
   const trimmed = String(text ?? "").trim();
   if (trimmed === "") return text ?? "";
@@ -110,12 +98,11 @@ export function formatLiteral(value) {
   return JSON.stringify(value);
 }
 
-/** An expression that is ONE variable and nothing else: `vars.x`, `vars['итог']`. */
+/** An expression that is exactly one variable: `vars.x`, `vars['итог']`. */
 const WHOLE_VAR = /^\s*vars(?:\.([^\W\d]\w*)|\[\s*'([^']*)'\s*\]|\[\s*"([^"]*)"\s*\])\s*$/u;
 
-/** A variable by name, as CEL addresses it. The dotted form is allowed only for
- * an identifier, so `итог` goes through the index form — the same two shapes
- * `celRefs` reads back. */
+/** A variable as CEL addresses it: dotted for an identifier, indexed
+ * otherwise (`vars['итог']`), the two shapes `celRefs` reads. */
 export function celVarRef(name) {
   const clean = String(name ?? "").trim();
   if (!clean) return "";
@@ -123,15 +110,13 @@ export function celVarRef(name) {
 }
 
 /**
- * How an expression was written: a bare variable, a bare value, or an
- * expression proper.
+ * How an expression was written: a bare variable, a bare value, or a real
+ * expression.
  *
- * The condition of a `condition`, the `when` of a case, the `items` of a loop —
- * the core evaluates all of them with CEL and accepts nothing else, so unlike a
- * stage argument these cannot keep the three sources as three shapes in the
- * JSON. They are READ BACK out of the text instead, and the panel offers the
- * same three ways of filling them in as a stage argument has. An empty field is
- * a variable not yet named: that is what these fields hold most of the time.
+ * A condition, a case's `when` and a loop's `items` are CEL only, so unlike a
+ * stage argument they cannot store the source as a separate shape. It is read
+ * back from the text, and the panel offers the same three choices as for a
+ * stage argument. An empty field is a variable not yet named.
  */
 export function celSource(expr) {
   const text = String(expr ?? "");
@@ -140,16 +125,15 @@ export function celSource(expr) {
   if (whole) return { source: "vars", value: whole[1] ?? whole[2] ?? whole[3] };
   try {
     const value = formatLiteral(JSON.parse(text));
-    // only if it survives the way back: otherwise the panel would quietly turn
-    // the string "42" into the number 42 the first time it is touched
+    // only if it round-trips; otherwise the string "42" would silently become
+    // the number 42 on first edit
     if (celExpr("const", value) === text) return { source: "const", value };
   } catch { /* not a value, then — an expression */ }
   return { source: "cel", value: text };
 }
 
-/** The text of an expression written the given way — the inverse of
- * `celSource`. A value is stored as JSON, which is valid CEL for everything a
- * form can produce. */
+/** The expression text for a source and value; the inverse of `celSource`.
+ * A value is written as JSON, which is valid CEL for anything a form makes. */
 export function celExpr(source, value) {
   if (source === "vars") return celVarRef(value);
   if (source !== "const") return String(value ?? "");
@@ -158,11 +142,9 @@ export function celExpr(source, value) {
 }
 
 /**
- * The read ports of an expression field, written the way a stage argument
- * writes its own: `items ← tickets` for a variable, `items ← ƒ(a,b)` for an
- * expression. The name of the field is on the card because a port that says
- * only the variable leaves "and what is it for?" to the panel — and a port is
- * what a wire is attached to.
+ * The read ports of an expression field, labelled like a stage argument's:
+ * `items ← tickets` for a variable, `items ← ƒ(a,b)` for an expression, so the
+ * card says what the variable is for.
  */
 function celFieldIns(field, expr) {
   const refs = celRefs(expr);
@@ -174,7 +156,7 @@ function celFieldIns(field, expr) {
 
 // ------------------------------------------- arguments <-> form rows
 
-/** node.arguments (the vars/const buckets, .$ = CEL) -> flat rows
+/** node.arguments (vars/const buckets, `.$` = CEL) -> rows
  * {name, source: vars|const|cel, value}. */
 export function argRows(node) {
   const rows = [];
@@ -208,8 +190,8 @@ export function writeArgRows(node, rows) {
 
 // --------------------------------------------- outputs <-> form rows
 
-/** node.outputs -> rows {src, dest, cel}: a bare key means the result field
- * src goes into the variable dest; cel means src is a CEL expression. */
+/** node.outputs -> rows {src, dest, cel}: a plain key sends result field src
+ * to variable dest; with cel, src is a CEL expression. */
 export function outputRows(node) {
   const rows = [];
   for (const [key, value] of Object.entries(node.outputs ?? {})) {
@@ -225,9 +207,9 @@ export function writeOutputRows(node, rows) {
     const src = (row.src ?? "").trim();
     const dest = (row.dest ?? "").trim();
     if (!dest) continue;
-    // a computed output may get its expression after the row is created (an
-    // empty one is caught by validation); an ordinary one needs both ends,
-    // because the key is the name of a result field and cannot be invented
+    // a computed output may get its expression later (validation reports an
+    // empty one); a plain one needs both ends, since the key names a result
+    // field
     if (row.cel) bucket[`${dest}.$`] = src;
     else if (src) bucket[src] = dest;
   }
@@ -251,8 +233,8 @@ export function writeVarRows(node, rows) {
   for (const row of rows) {
     const name = (row.name ?? "").trim();
     if (!name) continue;
-    // the expression may be filled in after the row is created (an empty one
-    // is caught by validation), so an empty value is no reason to drop the row
+    // an expression may be filled in later (validation reports an empty one),
+    // so the row is kept
     if (row.source === "cel") out[`${name}.$`] = row.value ?? "";
     else out[name] = parseLiteral(String(row.value ?? ""));
   }
@@ -323,36 +305,35 @@ const retryFieldDesc = (node) => ({
 
 export class NodeKind {
   static type = "node";
-  // a getter, not a value: a static field is evaluated when the class is
-  // defined, which is before any catalog has been fetched
+  // a getter: a static field would be evaluated at class definition, before
+  // any catalog is loaded
   static get title() { return t("kind.node"); }
   static color = "#97a0ad";
-  /** The glyph of the node type; for stage it is replaced by the stage icon. */
+  /** The kind's glyph; a stage node shows the stage's icon instead. */
   static glyph = "◆";
 
   static defaults(id) { return { id, type: this.type }; }
 
   static subtitle(_node, _env) { return ""; }
 
-  /** The card icon: a glyph, a link to an SVG file or inline markup. */
+  /** The card icon: a glyph, an SVG link or inline markup. */
   static icon(_node, _env) { return this.glyph; }
 
-  /** What to show instead of the icon if the picture did not load. */
+  /** Shown instead of the icon if it fails to load. */
   static iconFallback(_node, _env) { return this.glyph; }
 
-  /** Whether to repaint an SVG icon in the node color (monochrome sets). */
+  /** Whether to paint an SVG icon in the node color (monochrome sets). */
   static iconMono(_node, _env) { return false; }
 
-  /** The accent color of the card. */
+  /** The card's accent color. */
   static accent(_node, _env) { return this.color; }
 
-  /** The note under the title (for stage — the stage description from the backend). */
+  /** The note under the title (for a stage, its description from the backend). */
   static description(_node, _env) { return ""; }
 
   /**
-   * Behaviour markers of a node — the things that are otherwise invisible
-   * without opening the inspector: retries, error handling, dropping and
-   * re-exposing variables.
+   * Badges for behaviour not visible without the inspector: retries, error
+   * handling, consumed and exposed variables.
    */
   static badges(node) {
     const badges = [];
@@ -367,23 +348,21 @@ export class NodeKind {
     return badges;
   }
 
-  /** Control ports: {key, label} plus get/set of the target, or add+drop for
-   * list ports. `key` is stable and independent of the visible label. */
+  /** Control ports: {key, label} with get/set of the target, or add+drop for
+   * list ports. `key` is stable, independent of the label. */
   static orderPorts(_node) { return []; }
 
   /**
-   * Which port continues the execution flow. A new node picks up the former
-   * target through it when it is inserted into an edge (`wiring.js`): insert a
-   * stage between A and B and B goes into its `next`. Branching kinds have a
-   * different main road, so they override the key.
+   * The port that continues the flow. Inserted into an edge, the node takes
+   * the old target here (`wiring.js`): a stage inserted between A and B gets B
+   * as its `next`. Branching kinds override it.
    */
   static continuationKey(_node) { return "next"; }
 
   /**
-   * Which port the NEXT node attaches to when it is added while this one is
-   * selected ("append after"). Usually that is the continuation of the flow,
-   * but branching kinds need their branches first: an empty `parallel` with no
-   * branches is a validation error, not a node ready for a `next`.
+   * The port the next node attaches to when added with this one selected.
+   * Usually the continuation, but branching kinds need branches first: an
+   * empty `parallel` needs a branch, not a `next`.
    */
   static appendKey(node) { return this.continuationKey(node); }
 
@@ -394,30 +373,27 @@ export class NodeKind {
   static dataOuts(node) { return exposeDataPorts(node).outs; }
 
   /**
-   * Value rows on the card: node settings that do NOT read the frame —
-   * literals and expressions without variables. They have no connector and
-   * cannot have one (their source is the pipeline itself), but they have to be
-   * seen: a `fetch` node without its `url` shown is "some request somewhere",
-   * for which the panel has to be opened anyway.
+   * Value rows on the card: settings that do not read the frame (literals,
+   * expressions without variables). They have no connector, but are shown so
+   * the card says what the node does (a `fetch` without its `url` says
+   * little).
    */
   static valueRows(_node) { return []; }
 
-  /** The entries of the node's own area (parallel branches, a try body), or
-   * null. The canvas derives a visual region from them. */
+  /** The entries of the node's own region (parallel branches, a try body), or
+   * null. The canvas draws a region from them. */
   static regionEntries(_node) { return null; }
 
-  /** The node's areas as a list of groups: `{entries, key?, title?, glyph?,
-   * color?, rank?}`. By default there is one group — from `regionEntries`.
-   * Several groups are needed where a node has zones of different meaning (the
-   * body and the except of try); the order matters: a node reachable from two
-   * groups goes to the first one. */
+  /** The node's regions as groups: `{entries, key?, title?, glyph?, color?,
+   * rank?}`, by default one from `regionEntries`. A `try` has two (body and
+   * handlers); a node reachable from both belongs to the first. */
   static regionGroups(node) {
     const entries = this.regionEntries(node);
     return entries?.length ? [{ entries }] : [];
   }
 
-  /** Accept a variable dropped by a data drag (canvas). Returns a list of
-   * options {label, apply} — the user picks one from a menu. */
+  /** Accept a variable dropped on the node (canvas). Returns options
+   * {label, apply} for a menu. */
   static acceptVariable(_node, _variable, _env) { return []; }
 
   static fields(_node, _env) { return []; }
@@ -456,9 +432,8 @@ export const EntryKind = register(class EntryKind extends NodeKind {
     return [{ key: "next", label: "next", get: () => node.next, set: (v) => { node.next = v; } }];
   }
 
-  /** An expression reads what came from OUTSIDE (or a neighbouring variable of
-   * this same node — binding goes by dependencies, see EntryNode.seed_plan in
-   * the core). */
+  /** An expression reads variables from outside, or other variables of this
+   * node (bound in dependency order, see EntryNode.seed_plan in the core). */
   static dataIns(node) {
     const own = new Set(varRows(node).map((r) => r.name));
     const ins = [];
@@ -522,9 +497,8 @@ export const EntryKind = register(class EntryKind extends NodeKind {
     }
     issues.push(...cycleIssues(rows));
 
-    // there is exactly one entry point and there is no going back into it —
-    // the same three rules as in the core (Pipeline._entry_node_errors);
-    // otherwise "the start" means nothing
+    // one entry point, never jumped back into: the core's rules
+    // (Pipeline._entry_node_errors)
     const others = (graph.nodes ?? []).filter((n) => n !== node && n.type === "entry");
     if (others.length) {
       issues.push(t("issue.manyEntries", { nodes: others.map((n) => n.id).join(", ") }));
@@ -552,8 +526,8 @@ export const StageKind = register(class StageKind extends NodeKind {
 
   static subtitle(node) { return node.stage || t("kind.stage.none"); }
 
-  /** The icon from the stage docstring; without one — a monogram of the name
-   * (`IncrementStage` -> `IS`), so that stages still tell each other apart. */
+  /** The icon from the stage docstring, or a monogram of its name
+   * (`IncrementStage` -> `IS`) so stages can be told apart. */
   static icon(node, env) {
     return env?.stages?.get(node.stage)?.icon || this.iconFallback(node, env);
   }
@@ -568,7 +542,7 @@ export const StageKind = register(class StageKind extends NodeKind {
     return Boolean(env?.stages?.get(node.stage)?.icon_mono);
   }
 
-  /** The color from the docstring -> the category color -> the kind color. */
+  /** The docstring's color, else the category's, else the kind's. */
   static accent(node, env) {
     const spec = env?.stages?.get(node.stage);
     return spec?.color || categoryColor(spec?.category) || this.color;
@@ -594,10 +568,9 @@ export const StageKind = register(class StageKind extends NodeKind {
         }
       }
     }
-    // a computed output READS the frame too: `{"total.$": "vars.total + 1"}`
-    // takes `total` as it was BEFORE this node (the core substitutes the frame
-    // before the write into CEL, see apply_outputs). Without this port the node
-    // would look as if it wrote a variable out of nowhere
+    // a computed output reads the frame: `{"total.$": "vars.total + 1"}` reads
+    // `total` as it was before this node (see apply_outputs in the core).
+    // Without this port the node would seem to write from nowhere
     for (const row of outputRows(node)) {
       if (!row.cel) continue;
       const refs = celRefs(row.src);
@@ -616,16 +589,15 @@ export const StageKind = register(class StageKind extends NodeKind {
     return [...outs, ...super.dataOuts(node)];
   }
 
-  /** Value arguments: `url = "https://…"`, `delta = 10`, and also an
-   * expression that reads nothing from the frame (`ƒ 2 + 2`). A long list is
-   * trimmed: a card is not a panel, its job is to show, not to fit everything. */
+  /** Value arguments (`url = "https://…"`, `delta = 10`) and expressions that
+   * read no variables (`ƒ 2 + 2`). A long list is shortened. */
   static valueRows(node) {
     const rows = [];
     for (const row of argRows(node)) {
       if (row.source === "const") {
         const text = String(row.value ?? "");
-        // an empty value and a value of spaces (`separator: " "` of ConcatStage
-        // — a sensible setting) would otherwise look like "nothing is set"
+        // show an empty or all-space value (ConcatStage's `separator: " "`)
+        // quoted, so it does not look unset
         rows.push({ name: row.name, text: text.trim() === "" ? JSON.stringify(text) : text });
       }
       else if (row.source === "cel" && !celRefs(row.value).length) {
@@ -660,8 +632,8 @@ export const StageKind = register(class StageKind extends NodeKind {
       { kind: "select", group: "main", label: t("field.stage"),
         get: () => node.stage, set: (v) => { node.stage = v; },
         options: ["", ...env.stages.names()] },
-      // inputs and outputs are built from the stage spec: the user does not
-      // invent table rows but fills in what the stage declared about itself
+      // inputs and outputs come from the stage spec: rows for what the stage
+      // declares
       { kind: "spec-args", group: "in", label: t("field.arguments"), node, spec },
       { kind: "spec-outputs", group: "out", label: t("field.outputs"), node, spec },
       { kind: "tags", group: "more", label: t("field.consume"),
@@ -679,19 +651,17 @@ export const StageKind = register(class StageKind extends NodeKind {
     else if (env.stages.loaded && !env.stages.get(node.stage)) {
       issues.push(t("issue.unknownStage", { stage: node.stage }));
     }
-    // a required argument from the spec that nobody filled in: in the panel it
-    // is highlighted red, here it goes to the status bar with the same text
+    // a required argument left empty; the panel marks it red, the status bar
+    // gets the same text
     const spec = env.stages.get(node.stage);
     const filled = new Set(argRows(node).map((r) => r.name));
     for (const arg of spec?.arguments ?? []) {
       if (arg.optional || arg.name === "*" || filled.has(arg.name)) continue;
       issues.push(t("issue.argRequired", { name: arg.name }));
     }
-    // an outputs key is the name of a field in the stage result, and a field
-    // the stage does not return is a guaranteed runtime failure
-    // (StageOutputError). The core has the same check
-    // (StageNode._validate_output_fields) — here it is needed to learn about it
-    // before the run, right in the editor
+    // an outputs key names a result field; one the stage does not return fails
+    // at run time (StageOutputError). The core checks it too
+    // (StageNode._validate_output_fields); here it is caught before the run
     const declaredOuts = (spec?.outputs ?? []).map((o) => o.name);
     for (const row of outputRows(node)) {
       if (row.cel) {
@@ -718,8 +688,8 @@ export const ConditionKind = register(class ConditionKind extends NodeKind {
 
   static description() { return t("kind.condition.about"); }
 
-  /** A `condition` inserted into an edge picks up the former target with its
-   * "yes" branch: that is the main road, and `else` is the exception to it. */
+  /** Inserted into an edge, a `condition` takes the old target on its "yes"
+   * branch, the main road; `else` is the exception. */
   static continuationKey() { return "then"; }
 
   static defaults(id) { return { id, type: "condition", condition: "", then: null }; }
@@ -776,8 +746,7 @@ export const SwitchKind = register(class SwitchKind extends NodeKind {
 
   static subtitle(node) { return tn("kind.switch.cases", (node.cases ?? []).length); }
 
-  /** While there are no branches yet, the next node is the first `case`, not
-   * `default`. */
+  /** With no cases yet, the next node becomes the first case, not `default`. */
   static appendKey(node) { return (node.cases ?? []).length ? "default" : "add-case"; }
 
   static orderPorts(node) {
@@ -822,8 +791,8 @@ export const SwitchKind = register(class SwitchKind extends NodeKind {
   static fields(node) {
     return [
       { kind: "rows", group: "main", label: t("field.cases"),
-        // the `when` of a case is CEL in the JSON and the source column says
-        // how it was written — the same three ways a stage argument has
+        // a case's `when` is CEL; the source column says how it was written,
+        // as for a stage argument
         columns: [
           { key: "source", type: "select", width: "104px",
             options: [["vars", t("field.source.vars")], ["const", t("field.source.const")],
@@ -874,8 +843,8 @@ export const ParallelKind = register(class ParallelKind extends NodeKind {
     return (node.branches ?? []).map((b) => b.id).join(", ") || t("kind.parallel.none");
   }
 
-  /** While there are no branches, the next node is a branch, not what comes
-   * after the merge. */
+  /** With no branches yet, the next node becomes a branch, not what follows
+   * the merge. */
   static appendKey(node) { return (node.branches ?? []).length ? "next" : "add-branch"; }
 
   static orderPorts(node) {
@@ -1113,18 +1082,16 @@ export const TryKind = register(class TryKind extends NodeKind {
 
   static description() { return t("kind.try.about"); }
 
-  /** A `try` inserted into an edge takes the former target INTO ITS BODY: a
-   * block is put there to protect what came next, not to postpone it. */
+  /** Inserted into an edge, a `try` takes the old target into its body: the
+   * block protects what follows. */
   static continuationKey() { return "body"; }
 
   static regionEntries(node) {
     return node.body ? [node.body] : [];
   }
 
-  /** Two zones: the main road (the body) and the emergency one (the handlers).
-   * The emergency one is marked red — the color of errors across the whole
-   * interface — so that the frame itself shows these nodes only run when the
-   * body fails. */
+  /** Two regions: the body, and the handlers in red (the error color), showing
+   * they run only when the body fails. */
   static regionGroups(node) {
     const groups = [];
     if (node.body) groups.push({ entries: [node.body] });
@@ -1160,7 +1127,7 @@ export const TryKind = register(class TryKind extends NodeKind {
     return ports;
   }
 
-  /** The error object the block puts into the frame under result_var. */
+  /** The error object the block stores in result_var. */
   static dataOuts(node) {
     const outs = (node.except ?? [])
       .filter((h) => h.result_var)
@@ -1216,10 +1183,8 @@ export const TryKind = register(class TryKind extends NodeKind {
 // ---------------------------------------------------------------------- map
 
 /** Nodes reachable from `starts` along order edges, not entering `stopAt`.
- *
- * `regions.js` walks the graph the same way, but it imports this module, so
- * importing it back would close a cycle. The walk is four lines; the shared
- * thing that must not diverge is `orderPorts`, and both use it. */
+ * Same walk as in `regions.js`, which imports this module, so it cannot be
+ * imported back; both rely on `orderPorts`. */
 function reachableFrom(graph, starts, stopAt = new Set()) {
   const byId = new Map((graph.nodes ?? []).map((n) => [n.id, n]));
   const seen = new Set();
@@ -1255,12 +1220,12 @@ export const MapKind = register(class MapKind extends NodeKind {
     return `${items} → ${node.item_var || "item"}`;
   }
 
-  /** A `map` inserted into an edge takes the former target INTO ITS BODY: a
-   * loop is put there to repeat what came next, not to postpone it. */
+  /** Inserted into an edge, a `map` takes the old target into its body: the
+   * loop repeats what follows. */
   static continuationKey() { return "body"; }
 
-  /** Until there is a body there is nothing to repeat, so the next node goes
-   * into the body; after that a new node continues after the loop. */
+  /** Without a body the next node becomes the body; after that it follows the
+   * loop. */
   static appendKey(node) { return node.body ? "next" : "body"; }
 
   static regionEntries(node) {
@@ -1281,14 +1246,9 @@ export const MapKind = register(class MapKind extends NodeKind {
   }
 
   /**
-   * Two sorts of writes, and both belong to the node itself.
-   *
-   * The element and its index exist only inside the body — but the body reads
-   * them, and the loop is what puts them there, so without these ports the
-   * first node of every loop would read a variable nobody writes.
-   *
-   * The collected lists are what the loop leaves behind: one entry per
-   * element, in the order of the items.
+   * The loop's writes: the item and its index, which the body reads (without
+   * these ports the body's first node would read a variable nobody writes),
+   * and the collected lists left after the loop, one entry per item.
    */
   static dataOuts(node) {
     const outs = [{ label: `item → ${node.item_var || "item"}`,
@@ -1372,10 +1332,9 @@ export const MapKind = register(class MapKind extends NodeKind {
     return issues;
   }
 
-  /** The body has to be closed: a road out of it would abandon the elements
-   * still to come, and in parallel mode there would be no single frame to
-   * continue with. The core refuses such a graph, so the editor says it
-   * before the run rather than after. */
+  /** The body must be closed: an edge out of it would abandon the remaining
+   * items, and in parallel mode there would be no single frame to continue
+   * with. The core refuses such a graph; the editor says so before the run. */
   static #escapeIssues(node, graph) {
     if (!node.body || !exists(graph, node.body)) return [];
     const after = node.next ? reachableFrom(graph, [node.next]) : new Set();
@@ -1424,8 +1383,7 @@ export const WaitKind = register(class WaitKind extends NodeKind {
   static orderPorts(node) {
     const ports = [{ key: "next", label: "next", get: () => node.next,
                      set: (v) => { node.next = v; } }];
-    // the timeout road exists only with a timeout: without one the wait has
-    // nowhere else to go
+    // the timeout road exists only with a timeout
     if (node.timeout != null || node.on_timeout) {
       ports.push({ key: "on_timeout", label: "on_timeout", dashed: true,
                    get: () => node.on_timeout,
