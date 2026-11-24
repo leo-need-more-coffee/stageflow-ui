@@ -1,11 +1,10 @@
 /**
  * The pipeline model: the single owner of the editor's data.
  *
- * Every mutation goes through a model method and ends with `touch()` — a
- * "change" event every view is subscribed to. Nodes are stored exactly in the
- * format of the StageFlow JSON schema; the editor's coordinates live in
- * `node.metadata.ui` (metadata is allowed by the schema, so the layout
- * survives export and import).
+ * Every change goes through a model method and ends with `touch()`, which
+ * dispatches a "change" event to all views. Nodes are stored in the StageFlow
+ * JSON format; editor coordinates live in `node.metadata.ui` (allowed by the
+ * schema, so the layout survives export and import).
  */
 import { controlSuccessors, writersOf } from "./dataflow.js";
 import { nodeLayout } from "./geometry.js";
@@ -19,22 +18,17 @@ export function emptyPipeline() {
   return { entry: "", nodes: [], metadata: {}, subpipelines: {} };
 }
 
-/** The density of the auto-layout. The gaps used to be three times wider: the
- * data wires hung on the canvas all at once, and without air the graph read as
- * porridge. Now those wires are shown on focus (dataflow.js) and there is no
- * need to reserve room for them — only as much as order arrows need to bend.
- * Overridden by the editor's `spacing` option. */
+/** Auto-layout spacing. Data wires are only shown on focus (dataflow.js), so
+ * only order arrows need room. Overridden by the editor's `spacing` option. */
 export const DEFAULT_SPACING = { gapX: 110, gapY: 120, dataGap: 130 };
 
-/** How many edit steps the history remembers. A snapshot is a JSON string of
- * the pipeline, so a hundred of them are cheaper than one picture; nobody
- * rewinds deeper. */
+/** Undo history depth. Snapshots are JSON strings, so this is cheap. */
 const HISTORY_LIMIT = 100;
 
 export class PipelineModel extends EventTarget {
   #pipeline = emptyPipeline();
   #graphKey = null; // null — the root graph, otherwise a subpipeline id
-  // history: snapshots of the state AFTER every edit, the cursor is where we are
+  // undo history: snapshots of the state after each edit, and the cursor
   #history = [];
   #cursor = -1;
   #replaying = false; // an undo/redo is running — do not record a new entry
@@ -44,20 +38,16 @@ export class PipelineModel extends EventTarget {
     this.spacing = { ...DEFAULT_SPACING, ...spacing };
   }
 
-  // ------------------------------------------------------------- history
+  // -------------------------------------------------------------- history
 
   get canUndo() { return this.#cursor > 0; }
 
   get canRedo() { return this.#cursor >= 0 && this.#cursor < this.#history.length - 1; }
 
   /**
-   * Remembers the state after an edit.
-   *
-   * Comparing with the head of the history is not an optimisation but the
-   * point: `touch()` is also sent by actions that do not change the pipeline
-   * (switching a subpipeline, redrawing after the specs load), and without the
-   * comparison Ctrl+Z would rewind empty steps in which nothing happened for
-   * the user.
+   * Record the state after an edit, unless it equals the current head:
+   * `touch()` is also sent when nothing changed (switching subpipelines,
+   * redrawing after specs load), and those must not become undo steps.
    */
   #record() {
     if (this.#replaying) return;
@@ -74,8 +64,7 @@ export class PipelineModel extends EventTarget {
     if (!snapshot) return false;
     this.#cursor = index;
     this.#pipeline = JSON.parse(snapshot.json);
-    // the graph the edit was made on: otherwise undoing an edit in a
-    // subpipeline would happen "somewhere not here"
+    // switch back to the graph the edit was made in
     this.#graphKey = snapshot.graphKey !== null && snapshot.graphKey in (this.#pipeline.subpipelines ?? {})
       ? snapshot.graphKey
       : null;
@@ -92,13 +81,13 @@ export class PipelineModel extends EventTarget {
 
   redo() { return this.canRedo && this.#restore(this.#cursor + 1); }
 
-  // -------------------------------------------------------------- access
+  // --------------------------------------------------------------- access
 
   get pipeline() { return this.#pipeline; }
 
   get graphKey() { return this.#graphKey; }
 
-  /** The graph currently being edited: the root or one of the subpipelines. */
+  /** The graph being edited: the root or a subpipeline. */
   get graph() {
     return this.#graphKey === null
       ? this.#pipeline
@@ -118,11 +107,11 @@ export class PipelineModel extends EventTarget {
     this.dispatchEvent(new Event("change"));
   }
 
-  // -------------------------------------------------------- pipeline/graph
+  // --------------------------------------------------------- pipeline/graph
 
   /**
-   * @param keepLayout trust the coordinates in `data` — it is this editor's own
-   *   session coming back, not a document from elsewhere.
+   * @param keepLayout use the coordinates in `data` as they are (a restored
+   *   session of this editor).
    */
   setPipeline(data, { keepLayout = false } = {}) {
     const before = snapshotNodes(this.graph);
@@ -130,14 +119,12 @@ export class PipelineModel extends EventTarget {
     inheritPlacement(this.#pipeline, incoming);
     this.#pipeline = normalizePipeline(incoming, this.spacing, keepLayout);
     this.#graphKey = null;
-    // another document — another history: there is no undoing into a foreign
-    // pipeline
+    // a new document starts a new undo history
     this.#history = [];
     this.#cursor = -1;
     this.touch();
-    // What changed, so whoever is watching can tell a new document from an
-    // edit to the one on screen. A document gets the view fitted to it; an
-    // edit must not move the canvas out from under somebody who is reading it.
+    // Report what changed, so views can tell a new document (fit the view)
+    // from an edit of the current one (do not move the view).
     this.dispatchEvent(new CustomEvent("reset", {
       detail: changeBetween(before, snapshotNodes(this.graph)),
     }));
@@ -172,17 +159,17 @@ export class PipelineModel extends EventTarget {
     this.touch();
   }
 
-  /** Lay the current graph out again, discarding the manual coordinates. */
+  /** Re-run the automatic layout, discarding manual positions. */
   relayout() {
     autoLayout(this.graph, this.spacing);
     this.touch();
     this.dispatchEvent(new Event("reset"));
   }
 
-  // --------------------------------------------------------------- nodes
+  // ---------------------------------------------------------------- nodes
 
-  /** The shared part of every way of adding a node: the node is created but no
-   * event is sent — connecting gets to finish the graph before the redraw. */
+  /** Create a node without dispatching an event, so the caller can connect
+   * it before the redraw. */
   #create({ type, extra = {} }, pos) {
     const kind = kindOf({ type });
     const base = (extra.stage ?? type).replace(/Stage$/, "").toLowerCase() || type;
@@ -192,39 +179,33 @@ export class PipelineModel extends EventTarget {
       metadata: { ui: { x: Math.round(pos.x), y: Math.round(pos.y) } },
     };
     this.graph.nodes.push(node);
-    // an entry node IS the start of the graph: we keep the `entry` field in
-    // sync so that the entry point does not have to be assigned as a second
-    // action
+    // the first entry node becomes the graph's `entry`
     if (node.type === "entry" && !this.#entryNodeId(node.id)) this.graph.entry = node.id;
     return node;
   }
 
-  /** A node at a point. It steps aside from whatever is already there: every
-   * other way of creating one does (`createAt`, an insertion, a paste), and a
-   * card dropped exactly on top of another is a card that was added and
-   * lost. */
+  /** Add a node at a point, moved aside if it would overlap another card. */
   addNode(type, pos, extra = {}) {
     const node = avoidOverlap(this.graph, this.#create({ type, extra }, pos));
     this.touch();
     return node;
   }
 
-  /** A node at a canvas point (a double click, a drop from the palette). */
+  /** Create a node at a canvas point (double click, drop from the palette). */
   createAt(spec, pos) {
     const node = avoidOverlap(this.graph, this.#create(spec, pos));
     this.touch();
     return node;
   }
 
-  /** Link an order port of a node with a target (dragging a wire). */
+  /** Connect an order port of a node to a target (dragging a wire). */
   connect(fromId, portIndex, targetId) {
     if (!connectPort(this.graph, fromId, portIndex, targetId)) return false;
     this.touch();
     return true;
   }
 
-  /** Create a node and connect it to a port right away: "pull a wire into
-   * nowhere and pick what appears there" — the main way of assembling a graph. */
+  /** Create a node and connect it to a port (dragging a wire into empty space). */
   createConnected(fromId, portIndex, spec, pos) {
     const node = this.#create(spec, pos);
     connectPort(this.graph, fromId, portIndex, node.id);
@@ -233,8 +214,8 @@ export class PipelineModel extends EventTarget {
     return node;
   }
 
-  /** Break a link: for a list port (`case`, a branch, `except`) the list item
-   * itself disappears — a "branch into nowhere" cannot be represented in JSON. */
+  /** Disconnect a port. For list ports (`case`, branch, `except`) the list
+   * item is removed, since JSON cannot express an item without a target. */
   disconnect(fromId, portIndex) {
     const node = this.node(fromId);
     const port = node && kindOf(node).orderPorts(node)[portIndex];
@@ -255,9 +236,8 @@ export class PipelineModel extends EventTarget {
     return node;
   }
 
-  /** Add a node after an existing one — into its first free port. That is how
-   * a click on the palette works when a node is selected: the chain grows
-   * downwards instead of piling up unconnected cards. */
+  /** Add a node after an existing one, into its first free port (a palette
+   * click with a node selected). */
   appendAfter(fromId, spec) {
     const source = this.node(fromId);
     const portIndex = source ? freePortIndex(source) : -1;
@@ -269,8 +249,8 @@ export class PipelineModel extends EventTarget {
     return node;
   }
 
-  /** The id of another entry node in the current graph (there should be at
-   * most one — a second is highlighted by validation). */
+  /** The id of an entry node other than `exceptId`, if any (there should be
+   * at most one; validation flags a second). */
   #entryNodeId(exceptId) {
     return this.graph.nodes.find((n) => n.type === "entry" && n.id !== exceptId)?.id ?? null;
   }
@@ -279,9 +259,7 @@ export class PipelineModel extends EventTarget {
     this.removeNodes([id]);
   }
 
-  /** Delete several nodes at once: the references are scrubbed from everything
-   * that remains, and there is a single event — otherwise a group deletion
-   * would redraw the graph once per selected node. */
+  /** Delete nodes and remove references to them, with a single event. */
   removeNodes(ids) {
     const drop = new Set(ids);
     if (!drop.size) return;
@@ -290,36 +268,28 @@ export class PipelineModel extends EventTarget {
     for (const node of graph.nodes) {
       for (const id of drop) this.#scrubRefs(node, id);
     }
-    // the entry point is gone — if an entry node is still in the graph the
-    // start is just as obvious, no need to clear the field and make it be
-    // assigned again
+    // if the entry node was deleted, use another entry node if there is one
     if (drop.has(graph.entry)) graph.entry = this.#entryNodeId(null) ?? "";
     this.touch();
   }
 
-  /** A snapshot of nodes for the clipboard: a copy of the JSON as it is, with
-   * no references to the model — it can be pasted into another graph and after
-   * other edits. */
+  /** Plain JSON copies of nodes for the clipboard. */
   copyNodes(ids) {
     const want = new Set(ids);
     return this.graph.nodes.filter((n) => want.has(n.id)).map((n) => structuredClone(n));
   }
 
   /**
-   * Pastes copies of nodes into the current graph. Returns the ids of what was
-   * pasted.
+   * Paste copies of nodes into the current graph; returns the new ids.
    *
-   * Three rules, without which a paste produces a broken graph:
-   *  - ids are unique, and the references INSIDE the pasted set move onto the
-   *    copies — otherwise a pasted branch would control the original;
-   *  - a reference outwards is kept if such a node is in the graph (a copy of a
-   *    branch still merges into the same place), and cleared if it is not: a
-   *    paste into another subpipeline must not leave a reference into nowhere;
-   *  - a second `entry` is not pasted: there is one entry point per graph, and
-   *    such a node would be a validation error right away.
+   * - ids are made unique, and references between pasted nodes point to the
+   *   copies;
+   * - references to other nodes are kept if the target exists in this graph,
+   *   cleared otherwise;
+   * - an `entry` node is not pasted if the graph already has one.
    *
-   * @param at the top-left corner to paste at (world coordinates) or null —
-   *           then the copies land offset from the originals.
+   * @param at top-left corner in world coordinates, or null to offset the
+   *           copies from the originals.
    */
   pasteNodes(nodes, at = null) {
     const graph = this.graph;
@@ -348,8 +318,7 @@ export class PipelineModel extends EventTarget {
       }
     }
 
-    // the offset is shared by the whole set: the relative placement of the
-    // copies is preserved
+    // one offset for the whole set keeps the relative placement
     const left = Math.min(...copies.map((c) => c.metadata.ui.x));
     const top = Math.min(...copies.map((c) => c.metadata.ui.y));
     const dx = at ? Math.round(at.x - left) : 48;
@@ -376,8 +345,8 @@ export class PipelineModel extends EventTarget {
     return true;
   }
 
-  /** Removes every reference of a node to a deleted id (a port with a list
-   * item — by removing the item, a single one — by clearing it). */
+  /** Remove references from `node` to a deleted id: list items are removed,
+   * single references cleared. */
   #scrubRefs(node, id) {
     for (const port of kindOf(node).orderPorts(node)) {
       if (port.get?.() === id) {
@@ -401,15 +370,11 @@ export class PipelineModel extends EventTarget {
 }
 
 /**
- * Where the cards already are, carried onto the graph replacing them.
+ * Copy coordinates from the current graph to an incoming one, by node id.
  *
- * A graph written somewhere else has no coordinates — an assistant is told not
- * to invent them, because nothing out there knows how wide a card is. Without
- * this, a node that is simply still there would be laid out again, and every
- * card the person had dragged would move because two more nodes appeared.
- *
- * By id, and only where the arriving node brought nothing of its own: a graph
- * that does carry a placement meant it.
+ * A graph from outside (e.g. an assistant) usually has no coordinates.
+ * Without this, nodes that did not change would be laid out again and every
+ * card the user arranged would move. Coordinates in the incoming graph win.
  */
 function inheritPlacement(from, to) {
   const carry = (older, newer) => {
@@ -426,9 +391,9 @@ function inheritPlacement(from, to) {
   }
 }
 
-// ------------------------------------------------------------------ change
+// ---------------------------------------------------------------- changes
 
-/** Each node as "where it is" and "what it says", by id. */
+/** Each node's position and content, by id. */
 function snapshotNodes(graph) {
   const out = new Map();
   for (const node of graph?.nodes ?? []) {
@@ -444,19 +409,12 @@ function snapshotNodes(graph) {
 }
 
 /**
- * What happened between two versions of a graph.
+ * What changed between two versions of a graph.
  *
- * `fresh` is the question that matters to whoever is looking at the canvas:
- * is this the same graph, edited, or a different document? A document is worth
- * fitting the view to. An edit is not — moving the canvas while somebody is
- * reading it is the thing that makes a collaborator feel like an interruption.
- * Sharing a single node id is enough to call it the same graph: an assistant
- * rewriting a pipeline keeps the entry, and a graph with nothing in common was
- * not an edit of this one.
- *
- * `moved` carries how far each card went, so the move can be shown rather than
- * jumped. `changed` is what a node SAYS, position deliberately excluded — a
- * relayout moves everything and changes nothing.
+ * `fresh` is true when they share no node id, i.e. a different document
+ * (fit the view) rather than an edit (keep the view). `moved` holds how far
+ * each card moved, for animation. `changed` compares node content without
+ * the position, so a relayout changes nothing.
  */
 export function changeBetween(before, after) {
   const added = [];
@@ -474,10 +432,8 @@ export function changeBetween(before, after) {
   const shared = [...after.keys()].some((id) => before.has(id));
   const fresh = before.size === 0 || !shared;
   if (fresh) {
-    // A document is not "every node added". Saying it was would be true and
-    // useless, and it would light up the whole canvas the moment the editor
-    // opens — the mark means "somebody just touched this", and on a graph
-    // nobody has looked at yet there is no this.
+    // A new document is not marked as "everything added": marks mean
+    // "just changed", which does not apply to a graph seen for the first time.
     return { added: [], removed: [], changed: [], moved: new Map(), fresh: true, touched: 0 };
   }
   return {
@@ -490,7 +446,7 @@ export function changeBetween(before, after) {
   };
 }
 
-// ----------------------------------------------------------- normalization
+// ---------------------------------------------------------- normalization
 
 function normalizePipeline(data, spacing, keepLayout = false) {
   const pipeline = { ...emptyPipeline(), ...(data ?? {}) };
@@ -505,18 +461,12 @@ function normalizePipeline(data, spacing, keepLayout = false) {
 }
 
 /**
- * Give coordinates to the nodes that have none, leaving everyone else alone.
+ * Place nodes that have no coordinates, leaving the others where they are.
  *
- * The whole-graph layout is right for a graph nobody has arranged and wrong
- * for one somebody is working on: an assistant that adds two nodes writes no
- * coordinates at all, and relaying out the result moves every card the person
- * had dragged. What they asked for was two more cards, not a new arrangement.
- *
- * A new node is put under whoever leads to it — the same placement an insertion
- * by hand gets — and steps aside from anything already there. Nodes are taken
- * in passes, because a new node whose predecessor is also new has to wait for
- * it; what is left over after a pass that placed nothing goes below everything,
- * which is where a chain that leads from nowhere belongs.
+ * A new node goes below the node that leads to it (as a manual insert would)
+ * and moves aside from existing cards. Nodes are placed in passes, since a
+ * new node may depend on another new node; whatever is left goes below the
+ * graph.
  */
 function placeNewNodes(graph, spacing) {
   const leadsTo = new Map();
@@ -540,7 +490,7 @@ function placeNewNodes(graph, spacing) {
     waiting = next;
   }
 
-  // whatever is left starts its own column under the rest of the graph
+  // the rest start a column below the graph
   let y = Math.max(60, ...graph.nodes
     .filter((n) => n.metadata?.ui)
     .map((n) => n.metadata.ui.y + nodeLayout(n).height));
@@ -552,20 +502,13 @@ function placeNewNodes(graph, spacing) {
 }
 
 /**
- * Whether the coordinates in a graph place the cards on top of one another.
- *
- * Coordinates that do are not a layout: nobody arranged this and looked at it.
- * They are what a writer produces mechanically — the same `{x: 0, y: 0}` on
- * every node, or a column of numbers that took no account of how wide a card
- * is — and a graph opened that way is one unreadable pile.
- *
- * Measured with the auto-layout's own idea of a card, so this asks exactly the
- * question the layout would have answered: would it have left them apart.
+ * Whether the stored coordinates make cards overlap, i.e. they are not a
+ * real layout (e.g. `{x: 0, y: 0}` on every node). Uses the auto-layout's
+ * card sizes.
  */
 function cardsCollide(graph) {
-  // only the cards that are somewhere. A node with no coordinates is not at
-  // the origin, it is unplaced — counting it as (0, 0) made every graph with
-  // one new node in it look like a pile, and relaid out the whole thing
+  // Only nodes with coordinates: a node without them is unplaced, not at
+  // (0, 0).
   const boxes = graph.nodes
     .filter((node) => node.metadata?.ui)
     .map((node) => {
@@ -584,15 +527,13 @@ function cardsCollide(graph) {
 }
 
 /**
- * @param keepLayout the coordinates are this editor's own — a restored session
- *   — and are used as they are. Somebody dragged those cards, and two of them
- *   touching is their arrangement rather than a mistake to correct on reload.
+ * @param keepLayout use the stored coordinates as they are (a restored
+ *   session), even if some cards touch.
  */
 function normalizeGraph(graph, spacing, keepLayout = false) {
   let needsLayout = false;
-  // the `entry` field is optional in the JSON if the start is given by an entry
-  // node: we derive it right at load time — both the auto-layout and the
-  // validation depend on it
+  // `entry` is optional when there is an entry node; derive it on load, since
+  // layout and validation need it.
   if (!graph.entry) {
     const entryNode = graph.nodes.find((n) => n.type === "entry");
     if (entryNode) graph.entry = entryNode.id;
@@ -603,45 +544,36 @@ function normalizeGraph(graph, spacing, keepLayout = false) {
       node.branches = (node.branches ?? []).map((b) =>
         typeof b === "string" ? { id: b, entry: b } : b);
     }
-    // the same shorthand the core accepts: a list of names means "keep the name"
+    // as in the core: a list of names means "same name"
     if (node.type === "map" && Array.isArray(node.collect)) {
       node.collect = Object.fromEntries(node.collect.map((name) => [name, name]));
     }
     if (!node.metadata.ui) needsLayout = true;
   }
-  // a graph from outside may carry coordinates that are not a layout at all
+  // coordinates from outside may not be a real layout
   const collide = !keepLayout && cardsCollide(graph);
   const arranged = graph.nodes.filter((n) => n.metadata.ui).length;
   if (collide || (needsLayout && !arranged)) {
-    // nothing to preserve, or what there is cannot be trusted
+    // nothing to keep, or the stored positions overlap
     autoLayout(graph, spacing);
   } else if (needsLayout) {
-    // some of it is arranged and some of it is new: only the new part is ours
-    // to place, and the rest is where somebody put it
+    // some nodes are placed and some are new: place only the new ones
     placeNewNodes(graph, spacing);
   }
 }
 
 /**
- * The layout for graphs without saved coordinates:
+ * Automatic layout for graphs without saved coordinates.
  *
- * - Y gives the execution order: the BFS depth over order edges, top to bottom.
- * - X gives nesting and data flow: every area (the branches of `parallel`, the
- *   body of `try`, the body of `map`) gets a COLUMN of its own, and inside a
- *   column a node stands to the right of those whose variables it reads.
+ * - Y is execution order: BFS depth along order edges.
+ * - X is nesting and data flow: every region (`parallel` branches, `try`
+ *   body and handlers, `map` body) gets its own column; within a column, a
+ *   node is placed to the right of the nodes whose variables it reads.
  *
- * Columns are not decoration but a guarantee: the frame of an area is drawn
- * around the bounds of its nodes, so an unrelated node that falls inside that
- * rectangle looks like part of the area — as if `try` caught its errors too.
- * While X was handed out by a common packing per level, strangers regularly
- * ended up inside (most often the `except` handlers: they stand at the level of
- * the body but are not part of that area). Separating them afterwards does not
- * work — on nested areas the pushing-out loops forever. Columns rule it out by
- * construction: a node lies in the column of its own area and in nobody else's.
- *
- * Columns are reused vertically: two blocks that follow one another occupy the
- * same column — the graph does not sprawl to the right with every `try` in a
- * chain.
+ * Separate columns guarantee that no unrelated node falls inside a region's
+ * frame (which would make it look like part of the region). Columns are
+ * reused by blocks that follow one another, so the graph does not grow
+ * sideways with every block.
  */
 export function autoLayout(graph, spacing = {}) {
   const level = new Map();
@@ -664,10 +596,9 @@ export function autoLayout(graph, spacing = {}) {
       }
     }
   }
-  // The merge point of a parallel must be BELOW every node of its branches —
-  // otherwise it stands at the same level as they do and lands inside the
-  // branching area. We shift it together with everything after it; several
-  // passes for the case of nested parallels.
+  // A parallel's merge point must be below all its branch nodes, or it would
+  // fall inside the branch region. Shift it and everything after it down;
+  // repeat for nested parallels.
   for (let pass = 0; pass < 4; pass += 1) {
     let changed = false;
     for (const region of computeRegions(graph, null)) {
@@ -690,11 +621,9 @@ export function autoLayout(graph, spacing = {}) {
   const sizes = new Map(graph.nodes.map((n) => [n.id, nodeLayout(n)]));
   const writers = writersOf(graph);
 
-  // Whom a writer reaches through control (with the implicit exits from
-  // areas). The anchor needs this: if a reader stands BELOW a writer in the
-  // flow, the wire already reads top to bottom — no reason to move the reader
-  // right. Otherwise a chain of "everyone reads the previous one" walked off
-  // across the whole canvas like a staircase.
+  // Nodes reachable from each writer through control flow. If a reader is
+  // below its writer, the wire already reads top to bottom and the reader
+  // does not need to move right (avoids a staircase layout).
   const succs = controlSuccessors(graph);
   const downstream = new Map();
   const flowsInto = (from, to) => {
@@ -715,16 +644,16 @@ export function autoLayout(graph, spacing = {}) {
   const orphanLevel = Math.max(-1, ...level.values()) + 1;
   const levelOf = (node) => (level.has(node.id) ? level.get(node.id) : orphanLevel);
 
-  // ---------------------------------------------------------- columns
+  // -------------------------------------------------------------- columns
 
-  // the group of a node is the tightest area it belongs to ("" — the root)
+  // a node's group is the smallest region containing it ("" is the root)
   const regions = computeRegions(graph, null); // sorted from the largest down
   const groupOf = new Map();
   for (const region of regions) {
     for (const id of region.members) groupOf.set(id, region.key);
   }
 
-  // the tree of areas: the parent is the smallest of the strictly enclosing ones
+  // region tree: a region's parent is the smallest region strictly enclosing it
   const encloses = (outer, inner) => outer.members.size > inner.members.size
     && [...inner.members].every((id) => outer.members.has(id));
   const parentGroup = new Map();
@@ -741,15 +670,12 @@ export function autoLayout(graph, spacing = {}) {
   for (const node of graph.nodes) membersOf.get(groupOf.get(node.id) ?? "").push(node);
 
   /**
-   * The column of one group in its own coordinates.
+   * Lay out one group's column in its own coordinates.
    *
-   * The nested areas are placed first — a block takes the left position and
-   * the group's own nodes step aside to the right. The order is exactly that
-   * because a block is the main road: the body of a `try` should read before
-   * its `except` handlers rather than hide behind them (the handlers have their
-   * own area with a bigger `rank`, so on shared levels they stand to the right
-   * of the body). Returns the column width, the relative Xs and the range of
-   * occupied levels.
+   * Nested regions are placed first, from the left, and the group's own
+   * nodes go to their right. Regions with a lower `rank` go first, so a `try`
+   * body is left of its handlers. Returns the width, relative x positions and
+   * the range of levels used.
    */
   const layoutGroup = (key) => {
     const pos = new Map();
@@ -765,16 +691,13 @@ export function autoLayout(graph, spacing = {}) {
       maxLevel = Math.max(maxLevel, lvl);
     }
 
-    // nested areas go in bands from left to right; a band can be put under an
-    // occupied one if their levels do not overlap (the frame only covers its
-    // own levels, on foreign ones it is not there) — otherwise the graph would
-    // drift right with every block
+    // Nested regions are placed in bands from left to right; a band can be
+    // reused by a region on levels that do not overlap.
     const bands = [];
     const nested = regions
       .filter((region) => parentGroup.get(region.key) === key)
       .map((region) => ({ region, ...layoutGroup(region.key) }))
-      // at equal levels the area with the smaller rank goes left: the body of a
-      // `try` reads before its `except` handlers
+      // on the same levels, lower rank first (`try` body before handlers)
       .sort((a, b) => a.minLevel - b.minLevel || a.region.rank - b.region.rank);
 
     for (const band of nested) {
@@ -791,7 +714,7 @@ export function autoLayout(graph, spacing = {}) {
       maxLevel = Math.max(maxLevel, band.maxLevel);
     }
 
-    /** Shifts a node right while it climbs onto a band of its own level. */
+    /** Move a node right until it clears the bands on its level. */
     const clearBands = (x, width, lvl) => {
       for (let step = 0; step <= bands.length; step += 1) {
         const hit = bands.find((b) => b.minLevel <= lvl && b.maxLevel >= lvl
@@ -802,10 +725,8 @@ export function autoLayout(graph, spacing = {}) {
       return x;
     };
 
-    // the left bound of a node: not left of whoever handed control to it, and
-    // right of the writers ACROSS the flow — those the node's control never
-    // reaches. Data along the flow (which is almost all of it) already reads
-    // top to bottom.
+    // A node's leftmost position: not left of its predecessor, and right of
+    // writers it reads from that are not on its control path.
     const anchor = (node) => {
       let x = pos.get(parent.get(node.id)) ?? 0;
       for (const writer of writers.get(node.id) ?? []) {
@@ -819,8 +740,7 @@ export function autoLayout(graph, spacing = {}) {
     let width = Math.max(0, ...bands.map((b) => b.x + b.width));
     for (const lvl of [...rows.keys()].sort((a, b) => a - b)) {
       const row = rows.get(lvl);
-      // those whom the data pulls further left go first — otherwise the
-      // neighbours crowd them out
+      // nodes pulled furthest left by their data go first
       row.sort((a, b) => anchor(a) - anchor(b));
       let cursor = 0;
       for (const node of row) {
@@ -837,8 +757,7 @@ export function autoLayout(graph, spacing = {}) {
 
   const root = layoutGroup("");
 
-  // Y is shared by the whole graph: a level takes as much as the tallest card
-  // on it needs
+  // Y is shared by the whole graph; each level is as tall as its tallest card
   const heights = new Map();
   for (const node of graph.nodes) {
     const lvl = levelOf(node);

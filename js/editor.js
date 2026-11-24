@@ -1,24 +1,23 @@
 /**
- * The StageFlow editor facade — the entry point of the future library.
+ * The editor facade: the entry point for embedding the editor.
  *
  *   import { connectBackend } from "stageflow-editor/connect.js";
  *   import { createEditor } from "stageflow-editor";
  *
  *   const backend = await connectBackend({ storageKey: "stageflow-editor" });
  *   const editor = createEditor(container, {
- *     backend,                                   // where the stages and the run API live
+ *     backend,                                   // stage specs and the run API
  *     pipeline: {...},                           // the initial pipeline
  *     onChange: (pipeline) => {...},
  *     spacing: { gapX: 96, gapY: 140, dataGap: 120 }, // layout density
  *     dataMode: "focus",                         // data wires: off|focus|all
  *   });
  *
- * The editor holds no stage registry and executes nothing itself: `backend` is
- * required, and it is the one thing without which nothing works (see
- * `backend.js`). It may be a `Backend` or just its address.
+ * The editor has no stages of its own and runs nothing: `backend` (a
+ * `Backend` or an address) is required.
  *
- * The public API: getPipeline / setPipeline / setStages / validate, and the
- * "change" event (Editor is an EventTarget). Everything else is internals.
+ * Public API: getPipeline / setPipeline / setStages / validate and the
+ * "change" event (Editor is an EventTarget). The rest is internal.
  */
 import { Backend } from "./backend.js";
 import { rememberBackend } from "./connect.js";
@@ -45,21 +44,18 @@ function el(tag, className) {
   return node;
 }
 
-/** The letter of a key regardless of the keyboard layout: on a non-Latin layout
- * `e.key` gives a letter of that alphabet, and Ctrl+Z would stop working
- * exactly where the editor is used. `e.code` describes the physical key, so we
- * take it whenever it is there. */
+/** The letter of a key independent of the keyboard layout: `e.code` is the
+ * physical key, so Ctrl+Z works on non-Latin layouts too. */
 function letterOf(e) {
   return e.code?.startsWith("Key") ? e.code.slice(3).toLowerCase() : e.key.toLowerCase();
 }
 
 /**
- * The current selection — state shared by the canvas and the inspector.
+ * The current selection, shared by the canvas and the inspector.
  *
- * There can be several selected NODES (the marquee with the right button,
- * Shift-click): they are moved and deleted at once. An edge is selected one at
- * a time — transitions have no group meaning. `current` answers the question
- * "what to show in the panel": one node — its form, several — a summary.
+ * Several nodes can be selected (marquee, Shift-click) and are moved or
+ * deleted together; only one edge at a time. `current` is what the
+ * inspector shows: a node's form, or a summary for several.
  */
 export class Selection extends EventTarget {
   #current = null;
@@ -67,7 +63,7 @@ export class Selection extends EventTarget {
 
   get current() { return this.#current; }
 
-  /** The set of selected nodes (for a single selection — of one id). */
+  /** The selected node ids. */
   get nodes() { return this.#nodes; }
 
   has(id) { return this.#nodes.has(id); }
@@ -78,7 +74,7 @@ export class Selection extends EventTarget {
     this.dispatchEvent(new Event("change"));
   }
 
-  /** A group selection; a single node behaves like an ordinary selection. */
+  /** Select a group of nodes. */
   setNodes(ids) {
     this.#nodes = new Set(ids);
     const list = [...this.#nodes];
@@ -100,52 +96,45 @@ export class Selection extends EventTarget {
 
 export class Editor extends EventTarget {
   #restoredView = false;
-  /** Extra chips in the status bar, by owner — so a source replaces its own
-   * line rather than adding a second one on every update. */
+  /** Extra status bar chips by owner; an owner's update replaces its chip. */
   #notes = new Map();
 
   constructor(container, options = {}) {
     super();
     this.options = options;
-    // the backend is the one required option: without it there are no stages
-    // to put on the canvas and nothing to run the graph with
+    // Required: without a backend there are no stages and nothing can run.
     this.backend = options.backend instanceof Backend
       ? options.backend
       : new Backend(options.backend);
     this.model = new PipelineModel(options.spacing);
     this.stages = new StagesLibrary();
-    // which node types the core on that backend can run. Asked once, never
-    // blocking: an older backend serves no /api/meta and then nothing is
-    // known and nothing is marked (see capabilities.js)
+    // Which node types the backend can run. Fetched once in the background;
+    // an older backend without /api/meta just reports nothing.
     this.capabilities = new BackendCapabilities();
     this.capabilities.load(this.backend);
     this.selection = new Selection();
     this.validator = new Validator(this.stages, this.capabilities);
     this.issues = [];
-    // data wires: "off" — hide the layer, "focus" — only for the card under the
-    // cursor (and for a highlighted variable), "all" — everything at once
+    // Data wires: "off", "focus" (the hovered card and a highlighted
+    // variable) or "all".
     this.dataMode = options.dataMode ?? "focus";
     this.showDescriptions = true; // stage descriptions on the cards
     this.panels = { palette: true, inspector: true };
     this.clipboard = []; // the node buffer: lives in the editor, not in the system one
-    // the run is executed by the StageFlow core on the backend, here it is state only
+    // Runs execute in the core on the backend; this is only their state.
     this.runner = new Runner(this.backend);
-    // the pace of a run: the pause between nodes, so that execution can be
-    // followed by eye. It lives in the editor rather than in the run: it is
-    // chosen BEFORE the start and survives both the run and a reload
+    // Pause between nodes, so a run can be followed by eye. Set before a run
+    // and kept across runs and reloads.
     this.runDelay = options.runDelay ?? 0;
-    // secrets: the keys live apart from the graph and never get into the
-    // pipeline JSON (see secrets.js). The names of the server-side ones are
-    // fetched, the values are not
+    // Secrets are kept outside the graph and never written to the pipeline
+    // JSON (see secrets.js). Only names of server-side secrets are fetched.
     this.secrets = new SecretStore(options.storageKey);
     this.secrets.loadEnv(this.backend.secretsUrl, (url, init) => this.backend.fetch(url, init));
-    // the arguments of the previous run: `vars` goes into the run, `entered`
-    // comes back into the dialog, so that the same things are not retyped every
-    // time
+    // Arguments of the previous run: `vars` is sent, `entered` refills the
+    // dialog next time.
     this.runVars = { vars: {}, entered: {} };
 
-    // the saved session: the pipeline, the view and the panel layout survive a
-    // reload — the editor is a workplace, not a demonstration
+    // The pipeline, view and panel layout survive a reload.
     this.store = new EditorStore(options.storageKey);
     const saved = this.store.load();
     if (saved?.ui) {
@@ -159,21 +148,19 @@ export class Editor extends EventTarget {
     this.#buildDom(container);
     this.#wire();
 
-    // the specs can be handed over ready-made (a test, an embedding with its
-    // own registry); normally they come from the backend
+    // Specs may be passed in (tests, embedding); normally they come from the
+    // backend.
     if (options.stages) this.stages.setSpecs(options.stages);
     else this.reloadStages();
 
     const pipeline = saved?.pipeline ?? options.pipeline;
-    // a restored session keeps its coordinates: they are where this reader
-    // dragged the cards, and two that touch are their arrangement
+    // A restored session keeps the positions the user arranged.
     if (pipeline) this.setPipeline(pipeline, { keepLayout: Boolean(saved?.pipeline) });
     else this.#renderAll();
     if (saved) this.#restoreView(saved);
 
-    // the first fit happens after the container has got its size; a restored
-    // view is left alone, or "it did not reset" would turn into "the zoom reset
-    // itself"
+    // Fit the view once the container has a size, unless a saved view was
+    // restored.
     requestAnimationFrame(() => {
       if (this.#restoredView) this.canvas.render();
       else this.canvas.fitView();
@@ -181,7 +168,7 @@ export class Editor extends EventTarget {
     window.addEventListener("pagehide", () => this.store.flush(() => this.#state()));
   }
 
-  /** Restores the view and the current graph from a saved session. */
+  /** Restore the view and the current graph from a saved session. */
   #restoreView(saved) {
     if (saved.graphKey) this.model.setGraph(saved.graphKey); // resets the view by itself
     const view = saved.view;
@@ -213,39 +200,33 @@ export class Editor extends EventTarget {
 
   // ---------------------------------------------------------- public API
 
-  /** What the last `setPipeline` did to the graph: `{added, removed, changed,
-   * moved, fresh}` by node id, or null if nothing has been loaded. Whoever
-   * loaded it may want to say so — the bridge puts the counts in the status
+  /** What the last `setPipeline` changed: `{added, removed, changed, moved,
+   * fresh}` by node id, or null. The bridge shows the counts in the status
    * bar (see `docs/bridge.md`). */
   lastChange = null;
 
   /**
-   * A graph somebody else put here that has not been answered yet:
-   * `{before, change}`. While it stands, the marks on the cards stay, the
-   * status bar offers to keep it or to put it back, and the keyboard answers
-   * too (`Escape` or `Ctrl+Z` put it back).
+   * A graph applied from outside (e.g. by an assistant) that the user has not
+   * yet kept or reverted: `{before, change}`. While set, changed cards stay
+   * marked and the status bar offers Keep / Revert (Escape or Ctrl+Z revert).
    *
-   * Why it exists: `setPipeline` replaces the document, and a document has no
-   * undo into the one before it — so until now a graph from an assistant could
-   * not be taken back at all. Showing a change and offering no way out of it
-   * is the thing that makes people stop letting the assistant touch anything.
+   * `setPipeline` replaces the document and has no undo, so this is the only
+   * way to take such a change back.
    */
   pending = null;
 
   /**
-   * Put a graph from somewhere else on the canvas, to be kept or put back.
-   *
-   * Applied at once rather than previewed: seeing it IS the point, and a
-   * preview of a graph is a graph you cannot look inside. What it buys is the
-   * way out — the version before it is held until the question is answered.
+   * Apply a graph from outside, to be kept or reverted. It is applied
+   * immediately (so it can be inspected); the previous version is kept until
+   * the user decides.
    */
   applyIncoming(pipeline) {
     const before = this.getPipeline();
     const had = this.pending?.before ?? before;
     this.setPipeline(pipeline);
     if (this.lastChange && !this.lastChange.fresh) {
-      // a second push before the first was answered: the way back is still to
-      // where the PERSON left off, not to the assistant's previous attempt
+      // A second push before an answer: revert still goes back to the user's
+      // version, not to the previous push.
       this.pending = { before: had, change: this.lastChange };
       this.canvas.showChange(this.lastChange, { hold: true });
     } else {
@@ -255,7 +236,7 @@ export class Editor extends EventTarget {
     return this.lastChange;
   }
 
-  /** Keep it. The marks go, the way back is dropped. */
+  /** Keep the incoming change: clear the marks and the revert point. */
   acceptChange() {
     if (!this.pending) return false;
     this.pending = null;
@@ -264,7 +245,7 @@ export class Editor extends EventTarget {
     return true;
   }
 
-  /** Put it back the way it was, keeping the view and the place on the canvas. */
+  /** Revert the incoming change, keeping the view. */
   revertChange() {
     if (!this.pending) return false;
     const { before } = this.pending;
@@ -278,22 +259,19 @@ export class Editor extends EventTarget {
   getPipeline() { return this.model.toJSON(); }
 
   /**
-   * @param keepLayout the coordinates are ours already — a session coming back.
-   *   A document from anywhere else is checked: coordinates that stack the
-   *   cards get replaced by a real layout (see `normalizeGraph`).
+   * @param keepLayout use the stored coordinates as they are (a restored
+   *   session). Otherwise overlapping coordinates are replaced by an
+   *   automatic layout (see `normalizeGraph`).
    */
   setPipeline(pipeline, options = {}) {
-    // another document — another set of starting arguments: the values of the
-    // previous run belonged to the previous graph and must not be substituted
-    // silently
+    // A new document: forget the previous run's arguments.
     this.runVars = { vars: {}, entered: {} };
     this.model.setPipeline(pipeline, options);
   }
 
   setStages(specs) { this.stages.setSpecs(specs); }
 
-  /** Re-asks the backend for the stage specs (the registry changed, the
-   * backend was restarted). */
+  /** Fetch the stage specs again (the backend's registry changed). */
   reloadStages() {
     return this.stages.loadUrl(this.backend.stagesUrl,
                                (url, init) => this.backend.fetch(url, init))
@@ -305,16 +283,10 @@ export class Editor extends EventTarget {
   /**
    * Draw and validate against another plan.
    *
-   * A request to be SHOWN something, not a change of allowance: the backend
-   * answers `/api/meta?plan=` and `/api/stages?plan=` for any plan it has,
-   * unverified, and decides what a run may do from the credential instead.
-   * So this is honest as a preview — "what would this graph look like on the
-   * cheaper tier" — and honest as a mistake: a graph drawn against a plan the
-   * credential is not on is refused at the start of the run, by name.
-   *
-   * Unlike changing the backend, this needs no reload. The address, the
-   * session and the graph all stay; what changes is the palette, the limits
-   * and therefore the issues — which is exactly the thing being looked at.
+   * Only changes what is shown: the backend answers `/api/meta?plan=` and
+   * `/api/stages?plan=` for any plan, but a run always uses the plan of the
+   * credential (a mismatch is refused with a clear message). No reload is
+   * needed; the palette, limits and issues are updated.
    */
   async setPlan(plan) {
     const wanted = plan || null;
@@ -327,18 +299,11 @@ export class Editor extends EventTarget {
   }
 
   /**
-   * Change the credential without leaving the session.
+   * Change the credential without reloading (tokens expire or get rotated).
+   * Re-fetches stages, capabilities and secrets and repaints.
    *
-   * A token is the one connection setting that goes stale *during* the work:
-   * it expires, it gets rotated, it turns out to be the wrong tenant's. The
-   * address is the ground everything stands on and changing it reloads the
-   * page; the credential is not — the backend is the same backend, the graph
-   * is the same graph, and only the answers change. So this re-asks the three
-   * questions and repaints, and a reload would only lose the work.
-   *
-   * Throws with a message fit for showing if the new credential does not
-   * work; the old one is put back, because a half-applied credential is a
-   * session that fails at the next request instead of at this one.
+   * Throws a user-facing message if the new credential does not work, and
+   * restores the previous one.
    */
   async setCredential(auth) {
     const previous = this.backend.auth;
@@ -351,8 +316,7 @@ export class Editor extends EventTarget {
       throw err;
     }
     this.#persistBackend();
-    // the probe already fetched the registry — asking twice would be a second
-    // round trip to learn the same thing
+    // The probe already fetched the stages.
     this.stages.setSpecs(probe.stages, this.backend.stagesUrl);
     await this.capabilities.load(this.backend);
     this.secrets.loadEnv(this.backend.secretsUrl,
@@ -362,7 +326,7 @@ export class Editor extends EventTarget {
     return probe.count;
   }
 
-  /** The credential and the plan live with the address they belong to. */
+  /** Save the address with its credential and plan. */
   #persistBackend() {
     const key = this.options.storageKey;
     if (!key) return;
@@ -371,22 +335,18 @@ export class Editor extends EventTarget {
   }
 
   /**
-   * Run the pipeline. `mode: "step"` means debugging: the session stops before
-   * the very first node and goes on by command. It is executed by the core on
-   * the backend, so the debugger shows exactly what will happen.
+   * Run the pipeline on the backend. `mode: "step"` debugs: the session
+   * pauses before the first node and advances on command.
    *
-   * Before the start it asks for the starting variables: the `entry` node
-   * declares DEFAULT values, and running the graph with different ones is
-   * exactly what "run with arguments" means — not an edit of the JSON.
-   * `ask: false` skips the question (a repeat run by the "↻" button goes with
-   * the same arguments).
+   * First asks for the starting variables (the `entry` node has defaults).
+   * `ask: false` skips the dialog and reuses the previous values (the "↻"
+   * button).
    */
   async run({ mode = "run", delay, vars = null, ask = true } = {}) {
     const pipeline = this.getPipeline();
     let startVars = vars ?? this.runVars.vars;
     let startDelay = delay ?? this.runDelay;
-    // computed BEFORE the dialog: which keys exactly will be substituted is
-    // visible in the same place where "Run" is pressed
+    // Computed before the dialog, so it can show which secrets will be used.
     const secrets = this.secrets.forRun(pipeline);
 
     if (ask) {
@@ -411,31 +371,23 @@ export class Editor extends EventTarget {
       return await this.runner.start(pipeline, {
         mode,
         delay: startDelay,
-        // the secrets go FIRST: what the user typed into the dialog by hand
-        // overrides the store — otherwise "run it with another key" would be
-        // impossible without touching the store
+        // Secrets first, so values typed in the dialog override them.
         vars: { ...secrets.vars, ...(startVars ?? {}) },
         secrets: { env: secrets.env, names: secrets.names },
-        // which plan this graph was drawn and validated against. The backend
-        // runs on whatever the credential says and refuses the run if the two
-        // differ — "you are on basic" instead of six stages that "do not exist"
+        // The plan the graph was drawn against; the backend refuses a run if
+        // it differs from the credential's plan.
         plan: this.capabilities.plan,
       });
     } catch (err) {
-      // most often this is a pipeline description error from the core — it is
-      // more useful than "it did not work", so it goes to the status bar as it is
+      // Usually a pipeline error from the core; show it as is.
       this.#note(t("editor.runFailed", { reason: err.message ?? err }));
       return null;
     }
   }
 
   /**
-   * The pace of a run: the pause between nodes in seconds (the "Run" menu, the
-   * run dialog and the field in the debug panel all lead here).
-   *
-   * A running session picks it up on the fly: "too fast, I did not get to
-   * explain" is discovered in the middle of a demonstration rather than before
-   * it, and there is nothing to restart for that.
+   * Pause between nodes, in seconds (the "Run" menu, the run dialog and the
+   * debug panel all set it). Applies to a run in progress too.
    */
   setRunDelay(seconds) {
     this.runDelay = Math.max(0, Number(seconds) || 0);
@@ -453,7 +405,7 @@ export class Editor extends EventTarget {
     return this.clipboard.length;
   }
 
-  /** Cut: the same plus deletion (Ctrl+X). */
+  /** Cut: copy and delete (Ctrl+X). */
   cutSelection() {
     const count = this.copySelection();
     if (!count) return 0;
@@ -463,9 +415,8 @@ export class Editor extends EventTarget {
   }
 
   /**
-   * Paste copies from the buffer (Ctrl+V) — under the cursor if it is over the
-   * canvas. What was pasted becomes the selection at once: a copy is almost
-   * always moved or edited right away rather than looked for by eye.
+   * Paste from the clipboard (Ctrl+V), under the cursor if it is over the
+   * canvas. The pasted nodes become the selection.
    */
   paste() {
     if (!this.clipboard?.length) return [];
@@ -479,8 +430,7 @@ export class Editor extends EventTarget {
     return ids;
   }
 
-  /** Delete the selection: a node, a group of nodes or a link (Delete, the
-   * "Edit" menu). */
+  /** Delete the selected node(s) or edge (Delete, "Edit" menu). */
   deleteSelection() {
     const sel = this.selection.current;
     if (!sel) return false;
@@ -498,8 +448,7 @@ export class Editor extends EventTarget {
 
   redo() { return this.model.redo(); }
 
-  /** Hide/show the palette ("palette") or the inspector ("inspector"): on a
-   * narrow screen the panels eat the very canvas everything is about. */
+  /** Hide or show the palette ("palette") or the inspector ("inspector"). */
   togglePanel(name) {
     if (!(name in this.panels)) return;
     this.panels[name] = !this.panels[name];
@@ -508,8 +457,7 @@ export class Editor extends EventTarget {
     this.#persist();
   }
 
-  /** The data layer: "off" — hide, "focus" — for the card under the cursor,
-   * "all" — everything at once (the "View" menu). */
+  /** Data wires: "off", "focus" (the hovered card) or "all" ("View" menu). */
   setDataMode(mode) {
     if (!["off", "focus", "all"].includes(mode) || mode === this.dataMode) return;
     this.dataMode = mode;
@@ -517,7 +465,7 @@ export class Editor extends EventTarget {
     this.#persist();
   }
 
-  /** Whether the data connectors are visible on the cards (the "arg ← var" rows). */
+  /** Whether cards show their data rows ("arg ← var"). */
   get showData() { return this.dataMode !== "off"; }
 
   toggleDescriptions() {
@@ -541,8 +489,7 @@ export class Editor extends EventTarget {
     this.paletteEl = el("div");
     this.canvasEl = el("div");
     this.inspectorEl = el("div");
-    // the fold button lives in the panel itself — where people look at it; the
-    // rail in the place of a folded panel brings it back
+    // Each panel has its own fold button; a rail brings a folded panel back.
     main.append(
       this.#side("palette", "sf-side-left", this.paletteEl, "‹"),
       this.#rail("palette", "sf-rail-left", "›"),
@@ -564,25 +511,22 @@ export class Editor extends EventTarget {
       showDescriptions: () => this.showDescriptions,
       runner: this.runner,
       secrets: this.secrets,
-      // the backend an absolute icon path belongs to (see icons.js)
+      // the backend that absolute icon paths refer to (see icons.js)
       backend: this.backend,
-      // what that backend can run — the palette dims what it cannot
+      // the palette dims node types the backend cannot run
       capabilities: this.capabilities,
-      // the variable index in the panel lights the graph as it is hovered
+      // hovering a variable in the index highlights it on the graph
       highlightVar: (name) => this.canvas?.highlightVariable(name),
-      // panning and zooming do not change the model, but they do change the
-      // session state
+      // panning and zooming are saved in the session
       onView: () => this.#persist(),
     };
     this.canvas = new CanvasView(this.canvasEl, env);
     this.inspector = new Inspector(this.inspectorEl, env);
     this.palette = new Palette(this.paletteEl, {
       ...env,
-      // a click on the palette CONTINUES the chain from the selected node: a
-      // card dropped in the middle of the canvas with no links is work
-      // postponed, not a result. If there is nowhere to attach (nothing is
-      // selected, every port is taken), the node appears in the centre of the
-      // view, as before
+      // A click on the palette appends the node after the selected one, so it
+      // is connected right away. With nothing to attach to, the node is
+      // placed in the centre of the view.
       addNode: (type, extra = {}) => {
         const spec = { type, extra };
         const selected = this.selection.current;
@@ -590,26 +534,23 @@ export class Editor extends EventTarget {
           ?? this.model.createAt(spec, this.#centerPos());
         this.selection.set({ type: "node", id: node.id });
       },
-      // dragging from the palette: the target highlight and the drop itself
-      // belong to the canvas
+      // drag from the palette: the canvas shows the target and handles the drop
       dropHint: (x, y, spec) => this.canvas.dropHint(x, y, spec),
       dropCreate: (spec, x, y) => this.canvas.dropCreate(spec, x, y),
     });
     this.debug = new DebugPanel(this.debugEl, {
       ...env,
-      // "once more" repeats the run in the same mode — usually that is what is
-      // wanted
+      // "run again" uses the same mode
       rerun: () => this.run({ mode: this.runner.mode, ask: false }),
-      // the delay field in the panel changes THE SAME pace as the menu:
-      // otherwise what was set during a run would be forgotten by the next one
+      // same setting as the menu, so it persists across runs
       setDelay: (seconds) => this.setRunDelay(seconds),
     });
     this.toolbar = new Toolbar(this.toolbarEl, this);
     this.#applyPanels();
   }
 
-  /** A panel in a wrapper with its own fold button. The panel wipes its host on
-   * render, so the button lives NEXT to it rather than inside. */
+  /** A panel in a wrapper with a fold button. The button sits next to the
+   * panel because the panel clears its own element on render. */
   #side(name, className, panelEl, glyph) {
     const side = el("div", `sf-side ${className}`);
     const button = el("button", "sf-side-toggle", glyph);
@@ -619,8 +560,7 @@ export class Editor extends EventTarget {
     return side;
   }
 
-  /** A narrow rail in the place of a folded panel: bringing it back must be as
-   * easy as folding it. */
+  /** A narrow rail shown in place of a folded panel, to unfold it. */
   #rail(name, className, glyph) {
     const rail = el("button", `sf-rail ${className}`, glyph);
     rail.title = t("editor.unfoldPanel");
@@ -628,8 +568,7 @@ export class Editor extends EventTarget {
     return rail;
   }
 
-  /** The centre of the visible area — the place for a node that has nothing to
-   * attach to. */
+  /** The centre of the visible area, for a node with nothing to attach to. */
   #centerPos() {
     const center = this.canvas.centerWorld();
     return { x: center.x - NODE_MIN_W / 2, y: center.y - 50 };
@@ -638,8 +577,7 @@ export class Editor extends EventTarget {
   #wire() {
     this.model.addEventListener("change", () => {
       this.#pruneSelection();
-      // editing it is keeping it: somebody who has started working on a graph
-      // has answered the question, and being asked again would be nagging
+      // Editing an incoming change keeps it.
       if (this.pending) {
         this.pending = null;
         this.canvas.clearMarks();
@@ -652,18 +590,14 @@ export class Editor extends EventTarget {
     });
     this.model.addEventListener("reset", (event) => {
       const change = event.detail;
-      // a different document is worth fitting the view to; an edit of the one
-      // on screen is not — moving the canvas under somebody who is reading it
-      // is what makes a collaborator feel like an interruption
+      // Fit the view for a new document, not for an edit of the current one.
       if (!change || change.fresh) this.canvas.fitView();
       this.lastChange = change ?? null;
       this.canvas.showChange(change);
     });
     this.selection.addEventListener("change", () => {
-      // a node was selected — so it is about to be looked at or edited: a
-      // folded panel unfolds by itself, or a click on a card looks like
-      // "nothing happened". We do not fold it back: that is the user's
-      // decision, not a consequence of a click
+      // Selecting a node unfolds a folded inspector (it is not folded back
+      // automatically).
       const picked = this.selection.current?.type;
       if ((picked === "node" || picked === "nodes") && !this.panels.inspector) {
         this.togglePanel("inspector");
@@ -671,22 +605,19 @@ export class Editor extends EventTarget {
       this.canvas.render();
       this.inspector.render();
     });
-    // the run: the highlight on the graph, the debug panel and the state of the
-    // toolbar buttons
+    // run state: graph highlight, debug panel, toolbar buttons
     this.runner.addEventListener("change", () => {
       this.canvas.render();
       this.debug.render();
       this.toolbar.render();
     });
-    // a key was added or removed — both the variable name suggestions and the
-    // counter in the "File" menu change
+    // secrets changed: variable suggestions and the "File" menu counter
     this.secrets.addEventListener("change", () => this.#renderAll());
     this.stages.addEventListener("change", () => {
       this.issues = this.validate();
       this.#renderAll();
     });
-    // the answer arrives after the first paint: revalidate, because a node
-    // the backend cannot run is an issue only once we know it cannot
+    // capabilities arrive after the first paint; revalidate
     this.capabilities.addEventListener("change", () => {
       this.issues = this.validate();
       this.#renderAll();
@@ -694,8 +625,7 @@ export class Editor extends EventTarget {
     document.addEventListener("keydown", (e) => this.#onKeyDown(e));
   }
 
-  /** The selection may point at something that is no longer there: a node was
-   * deleted, an edit was undone. */
+  /** Drop selected ids that no longer exist (after delete or undo). */
   #pruneSelection() {
     const sel = this.selection.current;
     if (!sel) return;
@@ -708,15 +638,13 @@ export class Editor extends EventTarget {
   }
 
   #onKeyDown(e) {
-    // inside an input Ctrl+Z is an undo OF THE TYPING, and the browser does it
+    // in an input, Ctrl+Z undoes typing (the browser handles it)
     if (e.target.matches("input, textarea, select")) return;
     if ((e.ctrlKey || e.metaKey) && !e.altKey) {
       const key = letterOf(e);
       if (key === "z") {
         e.preventDefault();
-        // the first Ctrl+Z after somebody else changed the graph means "put it
-        // back" — there is no history to walk into anyway, a loaded document
-        // starts a new one
+        // The first Ctrl+Z after an incoming change reverts it.
         if (!e.shiftKey && this.revertChange()) return;
         e.shiftKey ? this.model.redo() : this.model.undo();
         return;
@@ -727,8 +655,8 @@ export class Editor extends EventTarget {
         return;
       }
       if (key === "c" || key === "x" || key === "v") {
-        // we only copy when there is something to copy: otherwise Ctrl+C must
-        // stay the browser's (selected text on the page)
+        // Only intercept Ctrl+C when nodes are selected, so copying page text
+        // still works.
         if (key === "v" ? this.clipboard.length : this.selection.nodes.size) {
           e.preventDefault();
           if (key === "c") this.copySelection();
@@ -738,8 +666,7 @@ export class Editor extends EventTarget {
         }
       }
     }
-    // the view is on the keyboard too: "View" menu items without hotkeys would
-    // mean going into the menu bar for "fit to screen" every single time
+    // View shortcuts.
     if (e.shiftKey && !e.ctrlKey && !e.metaKey && !e.altKey) {
       const key = letterOf(e);
       if (key === "f") {
@@ -753,8 +680,7 @@ export class Editor extends EventTarget {
         return;
       }
     }
-    // running and stepping are on keys, as in a debugger: the menu must not be
-    // the only way to run a pipeline
+    // Run and debug shortcuts.
     if (e.key === "F5") {
       e.preventDefault();
       this.run({ mode: e.shiftKey ? "step" : "run" });
@@ -787,12 +713,8 @@ export class Editor extends EventTarget {
   }
 
   /**
-   * A line in the status bar belonging to something other than the graph.
-   *
-   * The bar already answers "what is this connected to" (the backend) and
-   * "what is wrong" (the issues); a bridge to an agent is the same kind of
-   * question and belongs beside them rather than in a corner of its own.
-   * Falsy text removes the owner's chip.
+   * A status bar chip owned by something other than the graph (e.g. the
+   * agent bridge). Falsy text removes the owner's chip.
    */
   setStatusNote(owner, text, title = "", onClick = null) {
     if (text) this.#notes.set(owner, { text, title, onClick });
@@ -802,12 +724,10 @@ export class Editor extends EventTarget {
 
   #renderStatus() {
     this.statusEl.textContent = "";
-    // which backend this is talking to, on the right of the bar: the answer
-    // to "why is the map node greyed out" should not need the console
+    // The backend this editor is connected to, on the right.
     const about = this.capabilities.summary();
     if (about) {
-      // a button, not a label: "which backend is this" and "where do I put
-      // the token" are one question, and the bar is where it gets asked
+      // a button: it opens the connection settings
       const badge = el("button", "sf-status-backend");
       badge.textContent = `${t("editor.name", { version: VERSION })} · ${about}`;
       badge.onclick = () => this.toolbar.openConnection();
@@ -823,8 +743,7 @@ export class Editor extends EventTarget {
       this.statusEl.append(badge);
     }
     for (const [owner, note] of this.#notes) {
-      // a button only when there is something to do about it: a chip that
-      // looks pressable and is not is worse than one that plainly is not
+      // a button only if clicking does something
       const chip = el(note.onClick ? "button" : "span",
         `sf-status-note sf-status-${owner}${note.onClick ? " sf-status-act" : ""}`);
       chip.textContent = note.text;
@@ -832,7 +751,7 @@ export class Editor extends EventTarget {
       if (note.onClick) chip.onclick = note.onClick;
       this.statusEl.append(chip);
     }
-    // the answers come after what happened: read what was done, then decide
+    // keep/revert buttons for an incoming change
     if (this.pending) {
       const keep = el("button", "sf-status-note sf-status-act sf-status-keep");
       keep.textContent = t("review.keep");
