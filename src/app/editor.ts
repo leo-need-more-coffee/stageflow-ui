@@ -317,6 +317,9 @@ export class Editor extends EventTarget {
     if (this.lastChange && !this.lastChange.fresh) {
       this.pending = { before: had, change: this.lastChange };
       this.#mark(this.lastChange, true);
+      // bring what changed into view, or the change could be off screen
+      const first = this.lastChange.added?.[0] ?? this.lastChange.changed?.[0];
+      if (first) setTimeout(() => this.canvas?.focusNode(first), 50);
     } else {
       this.pending = null;
     }

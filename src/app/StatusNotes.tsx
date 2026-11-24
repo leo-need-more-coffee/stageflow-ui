@@ -5,6 +5,9 @@ import { Button, Tip } from "@/ui/kit";
 
 import { useEditor } from "./context";
 
+/** A catalog label without its own leading symbol, for a button with an icon. */
+const plain = (text: string) => text.replace(/^[^\p{L}\p{N}]+/u, "");
+
 /**
  * What something other than the user is doing to the graph: the agent bridge
  * and the changes it pushed, with Keep and Revert. Floats over the canvas
@@ -27,10 +30,10 @@ export function StatusNotes() {
         ? (
           <>
             <Tip content={t("review.keep.hint")}>
-              <Button size="sm" variant="primary" onClick={() => editor.acceptChange()}><Check /> {t("review.keep")}</Button>
+              <Button size="sm" variant="primary" onClick={() => editor.acceptChange()}><Check /> {plain(t("review.keep"))}</Button>
             </Tip>
             <Tip content={t("review.back.hint")}>
-              <Button size="sm" onClick={() => editor.revertChange()}><Undo2 /> {t("review.back")}</Button>
+              <Button size="sm" onClick={() => editor.revertChange()}><Undo2 /> {plain(t("review.back"))}</Button>
             </Tip>
           </>
         )
