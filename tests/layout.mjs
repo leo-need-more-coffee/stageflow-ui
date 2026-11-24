@@ -252,6 +252,14 @@ for (const point of [{ x: 0, y: 0 }, { x: 100, y: 100 }, { x: 40, y: 40 }]) {
   for (let i = 0; i < 4; i += 1) model.addNode("stage", { x: 300, y: 300 }, { stage: "Step" });
   claim(!piledUp(model.graph), "four nodes asked for one point do not become one card");
 }
+{
+  // a target put inside the frame by hand: no detour around the frame
+  const regions = [{ ownerId: "loop", members: new Set(["a"]), box: { x: 0, y: 100, width: 600, height: 400 } }];
+  claim(skippedArea(regions, "loop", "after", { x: 100, y: 60 }, { x: 400, y: 150 }) === null,
+    "a wire ending inside a frame it is not part of goes straight in");
+  claim(skippedArea(regions, "loop", "after", { x: 100, y: 60 }, { x: 100, y: 600 }) !== null,
+    "a wire past the frame still goes around it");
+}
 for (let i = 0; i < 300; i += 1) {
   const graph = randomPipeline(2 + Math.floor(rnd() * 4));
   if (graph.nodes.length < 3) continue;

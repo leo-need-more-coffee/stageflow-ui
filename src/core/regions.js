@@ -100,6 +100,10 @@ export function regionBounds(region, graph, layoutOf, padding = 20, labelSpace =
  *
  * @param regions as returned by `computeRegions`, each with a `box`
  */
+function inside(p, box) {
+  return p.x > box.x && p.x < box.right && p.y > box.y && p.y < box.bottom;
+}
+
 export function skippedArea(regions, ownerId, targetId, from, to) {
   const boxes = (regions ?? [])
     .filter((r) => r.ownerId === ownerId && r.box && !r.members.has(targetId))
@@ -108,6 +112,10 @@ export function skippedArea(regions, ownerId, targetId, from, to) {
       right: r.box.x + r.box.width,
       bottom: r.box.y + r.box.height,
     }))
+    // a wire that ends inside the block (its target sits within the frame
+    // though not part of the body) cannot go around it: a detour would only
+    // run to the side lane and cut back across the frame
+    .filter((box) => !inside(to, box) && !inside(from, box))
     .filter((box) => crossesBox(from, to, box));
   if (!boxes.length) return null;
   return {
