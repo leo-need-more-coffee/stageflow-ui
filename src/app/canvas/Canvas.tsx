@@ -157,6 +157,15 @@ function CanvasInner() {
     return () => { editor.canvas = null; };
   }, [editor, flow, fitReadable, shownOf]);
 
+  // a run moving on to a node off screen brings it into view: stepping
+  // through a graph should not mean hunting for where it stands
+  const runAt = editor.runner.node as string | null;
+  const following = Boolean(editor.runner.active || editor.runner.awaitingInput);
+  useEffect(() => {
+    if (!following || !runAt || editor.model.graphKey !== null) return;
+    editor.canvas?.focusNode(runAt);
+  }, [editor, following, runAt]);
+
   useEffect(() => {
     const host = wrapper.current;
     if (!host) return;

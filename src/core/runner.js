@@ -290,6 +290,9 @@ export class Runner extends EventTarget {
 
   async #control(payload) {
     if (!this.runId) return null;
+    // a run that has ended has nothing to step, pause or resume; marking it
+    // "running" here would leave it so, with no event to correct it
+    if (!this.active) return null;
     // show pause and step at once rather than waiting for the event
     if (payload.action === "pause") this.status = "paused";
     if (payload.action === "step" || payload.action === "resume") this.status = "running";

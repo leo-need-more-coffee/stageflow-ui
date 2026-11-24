@@ -86,6 +86,7 @@ export function CommandPalette({ open, onOpenChange }: { open: boolean; onOpenCh
                   </Command.Group>
                   <Command.Group heading={t("app.cmd.file")} className={group}>
                     <Item onSelect={run(() => dialogs.newPipeline())}>{t("file.new")}</Item>
+                    <Item onSelect={run(() => void editor.save())} shortcut="Ctrl+S">{t("app.save")}</Item>
                     <Item onSelect={run(() => dialogs.open("import"))}>{t("file.import")}</Item>
                     <Item onSelect={run(() => dialogs.open("export"))}>{t("file.export")}</Item>
                     <Item onSelect={run(() => dialogs.open("settings"))}>{t("file.settings")}</Item>

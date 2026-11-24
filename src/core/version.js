@@ -5,4 +5,4 @@
  * the browser cannot read package.json. `tests/capabilities.mjs` checks the
  * two match.
  */
-export const VERSION = "0.6.8";
+export const VERSION = "1.0.0";

@@ -1,8 +1,8 @@
 # The bridge to an agent
 
 An assistant that can write a pipeline is of limited use while the pipeline it
-wrote is text in a chat window. Somebody has to select it, open "File →
-Import…", paste it, look at it — and when they change something on the canvas,
+wrote is text in a chat window. Somebody has to select it, open "⋯ →
+Import JSON…", paste it, look at it — and when they change something on the canvas,
 the assistant is back to working from the version it remembers.
 
 The bridge closes that. A local process
@@ -24,8 +24,8 @@ It prints an address. Open it:
 https://…/stageflow-ui/?backend=https://sf.example&bridge=http://127.0.0.1:7433#bridge-token=…
 ```
 
-The status bar says `AI bridge` when it is connected, and shows the agent's own
-one-line note about what it just did.
+A note at the top of the canvas says `AI bridge` when it is connected, and
+shows the agent's own one-line note about what it just did.
 
 **Without `?bridge=` none of this exists.** No connection is attempted, no
 socket is looked for, nothing is drawn. It is a feature you ask for by opening
@@ -39,7 +39,7 @@ A graph from the agent goes through the same door an imported one does:
   agent writing plain JSON gets a readable graph rather than a heap at the
   origin;
 - the graph is **validated** on arrival like any other, so an agent's mistake
-  appears in the status bar where every other mistake appears;
+  appears in the state chip of the top bar, where every other mistake appears;
 - and it is **yours to keep or to put back** — see below. Loading a document
   starts a new edit history, so ordinary undo could not reach back past it;
   that is what the two buttons are for.
@@ -52,7 +52,7 @@ not the dragging.
 
 A graph from the bridge is applied at once — seeing it is the point, and a
 preview of a graph is a graph you cannot look inside — and until you answer for
-it, the status bar holds two buttons:
+it, the note at the top of the canvas holds two buttons:
 
     ✓ keep      ↩ put back
 
@@ -80,32 +80,33 @@ a document somebody opened, and the editor treats it as one.
 **Your view stays where you put it.** Panned and zoomed in on a corner of a
 large graph is exactly the state somebody is in while discussing it, and
 refitting the canvas on every push would make a collaborator feel like an
-interruption. A graph that shares no node with the one on screen is a different
+interruption. The view moves only to bring a newly added node into sight, and
+only when it is not already in sight. A graph that shares no node with the one on screen is a different
 document and still gets the view fitted to it — the rule is sharing a single
 id, because an assistant rewriting a pipeline keeps the entry.
 
-**Cards travel rather than jump.** A node whose position changed is put back
-where it was and released, so it moves to its new place over a third of a
-second. Nothing is measured and no second layout happens: the distance is in
-the graph.
+**The graph grows rather than jumps.** New cards fade in, new wires are drawn
+along their length from where they start, and a card whose position changed
+glides to its new place. An agent building a pipeline in several pushes is
+watched building it.
 
-**What was touched is marked** — green for a node that is new, amber for one
-that now says something different, the two oldest colours there are for a diff.
-A change from the bridge keeps its marks until it is answered for; anything
-else fades after a few seconds.
+**What was touched is marked** with a ring, new nodes and changed ones alike. A
+change from the bridge keeps its marks until it is answered for; anything else
+fades after a few seconds.
 
-**The status bar keeps to one line.** The agent's note is prose and prose has
+**The note keeps to one line.** The agent's note is prose and prose has
 no length — it is cut to fit and kept whole in the tooltip. The figures are a
 chip of their own and are never cut: they are the half you read at a glance,
-and a sentence growing past them would push them off the bar.
+and a sentence growing past them would push them out of sight.
 
-    AI: a second pipeline: map over the titles → subpipe…   +5 −14 ✎2   ✓ keep   ↩ put back Position is deliberately not a change: a relayout moves
+    AI: a second pipeline: map over the titles → subpipe…   +5 −14 ✎2   ✓ keep   ↩ put back
+
+Position is deliberately not a change: a relayout moves
 everything and alters nothing. Nothing is marked when the editor opens, however much is on the canvas. The
 mark means "somebody just touched this", and on a graph nobody has looked at
 yet there is no this.
 
-Under `prefers-reduced-motion` the travel and the fade are off; the colours
-stay.
+Under `prefers-reduced-motion` the motion is off; the marks stay.
 
 ## Reloads, and an agent that goes away
 
@@ -124,7 +125,7 @@ beginning, and that is deliberate: a graph drawn before the editor was open
 should be there when it opens.
 
 **An agent's process comes and goes** — it belongs to a session, and the next
-session is a new one. When it disappears the status bar says so and the editor
+session is a new one. When it disappears the note says so and the editor
 keeps trying for a few minutes, spaced further and further apart; the chip is a
 button, so it can also be told to try again now. A new process gets a new
 identity, and the tab notices and starts reading its log from the beginning

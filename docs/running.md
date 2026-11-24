@@ -1,77 +1,74 @@
 # Running and debugging
 
-A pipeline is run straight from the editor: "Run" → "Run" (`F5`) drives it to
-the end, "Debug step by step" (`Shift+F5`) stops before the very first node and
-goes on by command (`F10` is a step). The debug panel opens at the bottom: the
-status, the current node, step/pause/stop, the delay between nodes, the frame
-variables and the event log. The graph shows where execution is: the current
-node pulses in the accent color (or glows amber when stopped), the passed ones
-are marked with a green frame.
+![A run stopped before a node](img/debugger.png)
+
+**Run** in the top bar (`F5`) drives a pipeline to the end; its arrow offers
+**Debug step by step** (`Shift+F5`), which stops before the very first node
+and goes on by command — `F10` or the step button that takes Run's place in the
+bar. The run panel opens at the bottom:
+
+- **the header**: the state, the node, an error if there is one, the pace, and
+  the meters the backend keeps;
+- **Steps**: every node the run has entered, in order, with what became of it;
+- **Variables**: the frame at the selected step — **all** of it, or only what
+  that step **changed** — editable while the run stands still;
+- **Events**: the stream as it came, a node's streamed text and the result and
+  artifacts at the end.
+
+On the canvas the current node is ringed and spins, the passed ones are ticked
+and the wires the run went along are drawn in the accent colour, the one it is
+going along right now dashed and moving. Nodes the run has not reached are
+dimmed. A run moving on to a node off screen brings it into view. The panel's
+height is dragged by its top edge, and the panel folds to its header.
 
 ## The pace is set before the start
 
-Without a delay a pipeline finishes before the eye can follow its path through
-the graph: the nodes all flash at once, and "what is going on" is only visible
-in the log. Stepping by hand shows it honestly, but talking about a pipeline
-while pressing `F10` on every node is awkward — so between "instantly" and "a
-node per keystroke" there is a pace one simply watches: a pause between nodes,
+Without a delay a pipeline finishes before the eye can follow it: the nodes
+all flash at once. Stepping by hand shows it honestly, but talking about a
+pipeline while pressing `F10` on every node is awkward — so between "at once"
+and "a node per key" there is a pace one simply watches: a pause between nodes,
 held by the core (`StepDebugger(delay=…)`) rather than by a timer in the
-browser, so it does not drift apart from the real execution.
+browser, so it does not drift from the real execution.
 
-The pace is chosen in three places, and all three are one value
-(`Editor.runDelay`, which survives a reload): the "Delay between nodes" group
-in the "Run" menu, the "pace" row in the run dialog — right where the starting
-variables are entered — and the field in the debug panel. In the dialog it is a
-FIELD rather than a list: the ready-made values sit in the field's dropdown,
-but for a particular talk the pace is chosen by ear ("three seconds a node,
-otherwise I cannot keep up"), and running into someone else's list where a
-number simply has to be typed is a needless obstacle. A fraction is accepted
-with a dot as well as with a comma; a typed pace is shown in the menu as an
-item of its own with a tick, or the current value would look like "none". The
-field in the panel changes the pace of a RUNNING session: "too fast, I did not
-get to explain" is discovered in the middle of a demonstration rather than
-before it, and there is nothing to restart for that.
+The pace is one value (`Editor.runDelay`, which survives a reload), set in
+three places: under Run's arrow, in the run dialog next to the starting
+variables (a field, so that "three seconds a node" can be typed), and in the
+run panel's header, where it changes the pace of a run **already going** —
+"too fast, I did not get to explain" is found out in the middle of a
+demonstration, and there is nothing to restart for that.
 
 ## Starting variables
 
-**Before a run the editor asks for the starting variables** — they are declared
-by the `entry` node, and declared as DEFAULT VALUES: a name that arrived from
-outside is neither overwritten nor even evaluated by the node. So "run it with
-a different `n`" is a run with arguments rather than an edit of the JSON, and
-they have to be asked for exactly where the run is started. In the dialog an
-empty field means "as in the pipeline": the declared value stands as a
-placeholder rather than as text — so both what will happen by default and what
-was overridden are visible, and a computed variable (`total.$`, marked
-"expression") cannot be wiped by accident. A row below lets an own variable be
-added that is not in `entry` at all. What was entered is remembered for the
-next run (and survives a reload), the "↻" button in the panel repeats the run
-with the same arguments without asking, and loading another pipeline forgets
-the arguments — they belonged to the previous graph.
+**Before a run the editor asks for the starting variables.** They are declared
+by the `entry` node as **default values**: a name that comes from outside is
+neither overwritten nor evaluated by the node. So "run it with another `n`" is
+a run with arguments rather than an edit of the JSON. In the dialog an empty
+field means "as in the pipeline" — the declared value is a placeholder, not
+text — so both the default and what was overridden are visible, and a computed
+variable (`total.$`) cannot be wiped by accident. A row below adds a variable
+the `entry` does not have. What was typed is remembered for the next run,
+**↻** in the panel repeats the run with the same arguments without asking, and
+loading another pipeline forgets them.
 
 ## It is the core that executes, not the editor
 
 The semantics (CEL, types, `try`/`except`, `parallel`, frame merging) live in
 StageFlow; a second implementation in JavaScript would mean the debugger shows
-something other than what actually happens. So the editor is a client of the
-run API on the backend, and a run happens there in a real `Session` with the
-core debugger (`StepDebugger`).
+something other than what happens. So the editor is a client of the run API on
+the backend, and a run happens there, in a real `Session` with the core's
+`StepDebugger`.
 
-**Variables can be not only watched but edited** — right in the panel, while
-the session is stopped. An edit is applied before the next node (in the middle
-of a step a node would see half of it) and checked against the declared types:
-a mismatch is rejected with a `var_rejected` event rather than by failing the
-run. That is how branching is tested: set `n = 10` before a `condition` and the
-pipeline takes another road without the JSON being rewritten.
+**Variables can be edited, not only watched** — in the panel, while the run
+stands still, including adding one to the frame. An edit is applied before the
+next node and checked against the declared types: a mismatch is rejected with
+a `var_rejected` event rather than by failing the run. That is how a branch is
+tested: set `n = 10` before a `condition`, and the pipeline takes the other
+road without the JSON being touched.
 
-**The delay between nodes** (the field in the panel, milliseconds) is "watch it
-go" without stepping by hand: the session waits before every node, so the
-highlight has time to show the node that is executing rather than the one that
-has already passed.
-
-In a graph with a `parallel` a step looks unusual: the branches run at the same
-time, so the debugger stands on several nodes at once, and `⏭` releases the one
-whose turn came first. The log in that case honestly shows several `paused` in
-a row — those are not duplicates but different branches.
+In a graph with a `parallel` a step looks unusual: the branches run at once,
+so the debugger stands on several nodes, and a step releases the one whose turn
+came first. Several `paused` in a row in the events are different branches,
+not duplicates.
 
 ## The run API
 
@@ -110,18 +107,20 @@ does, in SQLite) ends the stream with an event
 {"type": "waiting", "node": "review", "input": "review", "deadline": 1767225600}
 ```
 
-and the run's status becomes `waiting`. The editor shows it as **⏳ waits for
-an answer**: the node, when the deadline passes (`on_timeout` is taken then),
-and a box for the answer, prefilled with the fields the wait node reads from
-it (its `outputs`):
+and the run's status becomes `waiting`. The editor shows it as **waits for an
+answer** — in the state chip and on the node — and the run panel offers the
+answer: when the deadline passes (`on_timeout` is taken then), and a field per
+value the wait node reads from it (its `outputs`). An empty field is not sent;
+a value is read as JSON when it parses and as text otherwise. **JSON** instead
+of **Form** takes the whole answer as one object:
 
 ```json
-{ "verdict": "", "text": "" }
+{ "verdict": "approve", "text": "" }
 ```
 
 **Answer** sends it as `POST /api/run/<id>/input {type, payload}`. The run goes
 on on the backend, and the editor reads the same event log from where it left
-off (`?from=N`), so the debug log continues rather than starting over. A
+off (`?from=N`), so the steps and the events continue rather than start over. A
 backend that refuses — the run is not waiting any more, or waits for another
 input — answers `409`, and the message is shown next to the button.
 
@@ -136,8 +135,8 @@ main graph.
 
 ## What a run cost
 
-While a run is going and once it has ended, the panel shows the meters the
-backend keeps, against the allowance where there is one:
+While a run is going and once it has ended, the panel's header shows the
+meters the backend keeps, against the allowance where there is one:
 
 ```
 steps 412/5000    seconds 8.2/120    tokens 5120/200000
@@ -146,7 +145,7 @@ steps 412/5000    seconds 8.2/120    tokens 5120/200000
 They come from the run state rather than from the event stream — the events
 say what happened, the state says what it cost — so the figures refresh on
 every step, pause or resume, and once more when the run ends. A backend that
-counts nothing sends nothing and the panel shows no chips at all.
+counts nothing sends nothing and the header shows no meters at all.
 
 A meter with no allowance is shown as a plain total: it is not a ceiling, but
 it is what a bill is made of. One that is nearly spent warms up, and one that

@@ -4,7 +4,7 @@ An API key written as a value into a variable of an `entry` node travels with
 the pipeline to every place the pipeline reaches: an export, a repository, a
 screenshot at a defence, someone else's editor. "Remove it before sending" is
 exactly the operation people forget, so keys have a place of their own:
-**"File" → "Secrets…"**.
+**⋯ → Secrets…**.
 
 The graph refers to a secret BY NAME ONLY: the `arguments.vars` of a stage
 reads `OPENAI_API_KEY` like an ordinary variable, and it is that name that goes
@@ -59,7 +59,7 @@ store:
   one: `api_key` rather than `OPENAI_API_KEY`). Otherwise the key would be back
   in the page with the very first `node_enter` — and from there in a
   screenshot;
-- the field of such a variable in the debug panel is closed for editing:
+- the field of such a variable in the run panel is closed for editing:
   editing the dots would mean sending them back into the live frame and wiping
   the key;
 - in the inspector a secret name is highlighted and labelled: it is visible

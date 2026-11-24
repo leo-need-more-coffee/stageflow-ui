@@ -25,7 +25,7 @@ calling.
 ## The connection screen
 
 The address is the first question the editor asks, and it asks it before the
-canvas appears: an editor with an empty palette and a dead "Run" would read as
+canvas appears: an editor with an empty add menu and a dead "Run" would read as
 broken rather than as unconfigured.
 
 - What is typed is normalised: `localhost:8765`, `http://localhost:8765/` and
@@ -55,9 +55,7 @@ broken rather than as unconfigured.
 ## The connection dialog
 
 Everything about the connection is reachable while the editor is open, from
-**"File" → "Connection…"** or by clicking the backend line in the status bar
-— the same question as "which backend is this", so the same place. Four
-sections:
+**⋯ → Connection…** in the top bar or the command palette. Four sections:
 
 - **Backend** — the address, and "Change…", which reopens the connection
   screen. Changing the address reloads the page. A reload rather than a live
@@ -167,7 +165,7 @@ belongs to no range. So the backend is asked, and answers with the registry:
 | Field | Means |
 |---|---|
 | `api` | the version of this HTTP contract; it moves only when an old client would break |
-| `stageflow` | the core's version — for the status bar and the logs, not for branching on |
+| `stageflow` | the core's version — for the connection dialog and the logs, not for branching on |
 | `node_types` | **the field to branch on**: what a pipeline may use here |
 | `stages` | how many stages this caller may use (the specs are `/api/stages`, narrowed the same way) |
 | `plan` | optional, a name for the allowance — shown, never interpreted |
@@ -181,8 +179,8 @@ core is older or because this caller's allowance is narrower is not a
 distinction the editor has to make.
 
 What the editor does with it: a type absent from `node_types` is greyed out in
-the palette with the reason in its tooltip, and a graph already using one gets
-an issue in the status bar before the run.
+the add menu with the reason, and a graph already using one gets an issue in
+the top bar's state chip before the run.
 
 With `limits` it does the same for what a graph can be judged by without
 running it — a shortest path longer than the allowed `steps`, a `retry` asking
@@ -203,15 +201,15 @@ two lines and it cannot drift from the registry.
 A backend that serves plans may accept `?plan=<name>` on `/api/meta` and
 `/api/stages`, and then answers about that plan instead of the caller's own.
 The **Plan** section of the connection dialog offers whatever `plans` listed,
-`?plan=basic` on the editor's own URL opens it that way, and the status bar
-marks it `plan basic (preview)`.
+`?plan=basic` on the editor's own URL opens it that way, and the dialog marks
+it as a preview.
 Nothing reloads: the address, the session and the graph stay, and only the
-palette, the limits and therefore the issues change — which is the thing being
+add menu, the limits and therefore the issues change — which is the thing being
 looked at.
 
 **It is unverified, and has to be.** A name is not a permission: drawing is
 not running, and an editor that must authenticate before it can grey out a
-palette entry is an editor nobody configures. So the question "what would this
+menu entry is an editor nobody configures. So the question "what would this
 graph look like on the cheaper tier" is answerable by anyone.
 
 Which is exactly why the parameter must not exist on the run. `POST /api/run`
@@ -321,7 +319,7 @@ The built-in stages ship with their translations, and your own are
 What the editor does with the fields: `arguments` and `outputs` become the rows
 of the inspector (with the type, the description and whether it is required),
 `description` becomes the note under the card title, `category` groups the
-palette and gives a stage its color when `color` is absent, and `icon` becomes
+add menu and gives a stage its color when `color` is absent, and `icon` becomes
 the card icon — a glyph, an inline `<svg>`, a data URI, a full URL, or an
 absolute path. **An absolute path (`/icons/globe.svg`) is resolved against the
 backend**, because it is the backend that declared the icon and the backend
