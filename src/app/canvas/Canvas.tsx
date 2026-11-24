@@ -380,7 +380,6 @@ function CanvasInner() {
               panOnScroll
               selectionOnDrag={false}
               connectionRadius={28}
-              proOptions={{ hideAttribution: true }}
             >
               <Background variant={BackgroundVariant.Dots} gap={20} size={1.2} color="var(--canvas-dot)" />
               <Controls showInteractive={false} position="bottom-left" />

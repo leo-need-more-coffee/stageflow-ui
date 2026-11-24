@@ -179,7 +179,13 @@
 }
 
 .react-flow__attribution {
-  display: none;
+  background: transparent;
+  font-size: 10px;
+  opacity: 0.5;
+}
+
+.react-flow__attribution a {
+  color: var(--fg-subtle);
 }
 
 /* the run trail: an edge the run has gone along */
