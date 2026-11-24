@@ -7,7 +7,7 @@
  *
  * Run: node tests/storage.mjs
  */
-import { EditorStore, readJson, removeKey, writeJson } from "../js/storage.js";
+import { EditorStore, readJson, removeKey, writeJson } from "../src/core/storage.js";
 
 let failed = 0;
 let checked = 0;

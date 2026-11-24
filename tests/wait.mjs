@@ -5,7 +5,7 @@
  * Run: node tests/wait.mjs
  */
 import "./_catalog.mjs";
-import { isDuration, kindOf } from "../js/kinds.js";
+import { isDuration, kindOf } from "../src/core/kinds.js";
 
 let failed = 0;
 let checks = 0;

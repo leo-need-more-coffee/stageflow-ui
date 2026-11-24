@@ -18,10 +18,10 @@
  * Run: node tests/tenant.mjs
  */
 import "./_catalog.mjs";
-import { Backend, cleanHeaders, mixedContentProblem } from "../js/backend.js";
-import { BackendCapabilities } from "../js/capabilities.js";
-import { EventStream } from "../js/sse.js";
-import { Runner } from "../js/runner.js";
+import { Backend, cleanHeaders, mixedContentProblem } from "../src/core/backend.js";
+import { BackendCapabilities } from "../src/core/capabilities.js";
+import { EventStream } from "../src/core/sse.js";
+import { Runner } from "../src/core/runner.js";
 
 let failed = 0;
 let checked = 0;

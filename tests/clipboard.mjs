@@ -16,7 +16,7 @@
  * Run: node tests/clipboard.mjs
  */
 import "./_catalog.mjs";
-import { PipelineModel } from "../js/model.js";
+import { PipelineModel } from "../src/core/model.js";
 
 let failed = 0;
 let checked = 0;

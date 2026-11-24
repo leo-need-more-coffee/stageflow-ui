@@ -12,9 +12,9 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 
-import { FALLBACK, install } from "../js/i18n.js";
+import { FALLBACK, install } from "../src/core/i18n.js";
 
-const path = fileURLToPath(new URL(`../i18n/${FALLBACK}.json`, import.meta.url));
+const path = fileURLToPath(new URL(`../public/i18n/${FALLBACK}.json`, import.meta.url));
 export const catalog = JSON.parse(readFileSync(path, "utf8"));
 
 install(FALLBACK, catalog);

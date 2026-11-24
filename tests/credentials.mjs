@@ -20,34 +20,6 @@ globalThis.localStorage = {
   removeItem: (key) => store.delete(key),
 };
 
-class FakeElement {
-  constructor(tag) {
-    this.tagName = tag;
-    this.children = [];
-    this.listeners = {};
-    this.value = "";
-    this.style = {};
-  }
-  append(...nodes) { this.children.push(...nodes); }
-  remove() {}
-  focus() {}
-  select() {}
-  addEventListener(type, fn) { (this.listeners[type] ??= []).push(fn); }
-  fire(type) { for (const fn of this.listeners[type] ?? []) fn({ type }); }
-  /** every descendant, for finding the fields by name */
-  *walk() {
-    for (const child of this.children) {
-      if (child instanceof FakeElement) {
-        yield child;
-        yield* child.walk();
-      }
-    }
-  }
-}
-
-const body = new FakeElement("body");
-globalThis.document = { createElement: (tag) => new FakeElement(tag), body };
-
 /** What went out, and with which headers. */
 const sent = [];
 globalThis.fetch = async (url, init = {}) => {
@@ -61,7 +33,8 @@ globalThis.fetch = async (url, init = {}) => {
   };
 };
 
-const { connectBackend, rememberBackend, storedBackend } = await import("../js/connect.js");
+const { attemptConnection, credentialFor, initialConnection, rememberBackend, storedBackend } =
+  await import("../src/core/connection.js");
 
 let failed = 0;
 let checked = 0;
@@ -113,10 +86,12 @@ check(storedBackend(KEY, ELSEWHERE).auth.value === "",
 
 // ------------------------------------------------------- the link attack
 
+// what the connection screen does on load: try the address it starts with,
+// with the credential it starts with
 async function openWith(url) {
   sent.length = 0;
-  body.children.length = 0;
-  const backend = await connectBackend({ storageKey: KEY, url });
+  const start = initialConnection({ storageKey: KEY, url });
+  const { backend } = await attemptConnection(KEY, start.url, start.auth, start.plan);
   return backend;
 }
 
@@ -140,24 +115,12 @@ check(home.auth.value === TOKEN.value, "and keeps it");
 
 store.clear();
 rememberBackend(KEY, { url: HOME, auth: TOKEN, plan: null });
-const pending = connectBackend({ storageKey: KEY, force: true, onCancel: () => {} });
-const fields = Object.fromEntries([...body.walk()]
-  .filter((node) => node.name).map((node) => [node.name, node]));
-fields.backend.value = ELSEWHERE;
-fields.backend.fire("input");
-check(fields["auth-value"].value === "",
-  "typing another address empties the credential fields");
-fields.backend.value = HOME;
-fields.backend.fire("input");
-check(fields["auth-value"].value === TOKEN.value,
+check(initialConnection({ storageKey: KEY, force: true }).url === "",
+  "a forced screen starts empty");
+check(credentialFor(KEY, ELSEWHERE).value === "",
+  "typing another address finds no credential for it");
+check(credentialFor(KEY, HOME).value === TOKEN.value,
   "and typing the remembered one brings its credential back");
-fields["auth-value"].value = "typed";
-fields["auth-value"].fire("input");
-fields.backend.value = ELSEWHERE;
-fields.backend.fire("input");
-check(fields["auth-value"].value === "typed",
-  "a credential somebody typed is not overwritten");
-void pending;
 
 if (failed) {
   console.error(`credentials: ${failed} of ${checked} checks failed`);

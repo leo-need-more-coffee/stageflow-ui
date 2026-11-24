@@ -15,9 +15,9 @@
  * Run: node tests/layout.mjs
  */
 import "./_catalog.mjs";
-import { PipelineModel, autoLayout } from "../js/model.js";
-import { computeRegions, regionBounds, skippedArea } from "../js/regions.js";
-import { nodeLayout, orderEdgePath } from "../js/geometry.js";
+import { PipelineModel, autoLayout } from "../src/core/model.js";
+import { computeRegions, regionBounds, skippedArea } from "../src/core/regions.js";
+import { nodeLayout, orderEdgePath } from "../src/core/geometry.js";
 
 let seed = 12345;
 const rnd = () => (seed = (seed * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff;

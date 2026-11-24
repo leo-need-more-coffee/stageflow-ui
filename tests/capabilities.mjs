@@ -15,11 +15,11 @@
  * Run: node tests/capabilities.mjs
  */
 import "./_catalog.mjs";
-import { BackendCapabilities } from "../js/capabilities.js";
-import { Validator } from "../js/stages.js";
-import { kindOf } from "../js/kinds.js";
-import { normalizeBackendUrl } from "../js/backend.js";
-import { VERSION } from "../js/version.js";
+import { BackendCapabilities } from "../src/core/capabilities.js";
+import { Validator } from "../src/core/stages.js";
+import { kindOf } from "../src/core/kinds.js";
+import { normalizeBackendUrl } from "../src/core/backend.js";
+import { VERSION } from "../src/core/version.js";
 
 let failed = 0;
 let checked = 0;

@@ -11,8 +11,8 @@
  * Run: node tests/dataflow.mjs
  */
 import "./_catalog.mjs";
-import { controlSuccessors, dataLinks, variablesOf, writersOf } from "../js/dataflow.js";
-import { categoryColor, varColor } from "../js/colors.js";
+import { controlSuccessors, dataLinks, variablesOf, writersOf } from "../src/core/dataflow.js";
+import { categoryColor, varColor } from "../src/core/colors.js";
 
 let failed = 0;
 let checked = 0;

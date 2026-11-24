@@ -21,12 +21,12 @@
  * Run: node tests/wiring.mjs
  */
 import "./_catalog.mjs";
-import { nodeLayout } from "../js/geometry.js";
-import { KINDS, kindOf } from "../js/kinds.js";
-import { reachable } from "../js/regions.js";
+import { nodeLayout } from "../src/core/geometry.js";
+import { KINDS, kindOf } from "../src/core/kinds.js";
+import { reachable } from "../src/core/regions.js";
 import {
   canContinue, connectPort, continuationIndex, freePortIndex, insertBetween, placeAfter,
-} from "../js/wiring.js";
+} from "../src/core/wiring.js";
 
 let failed = 0;
 let checked = 0;

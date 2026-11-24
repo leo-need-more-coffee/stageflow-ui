@@ -13,7 +13,7 @@
  * Run: node tests/rows.mjs
  */
 import "./_catalog.mjs";
-import { KINDS, celExpr, celSource, formatLiteral, parseLiteral } from "../js/kinds.js";
+import { KINDS, celExpr, celSource, formatLiteral, parseLiteral } from "../src/core/kinds.js";
 
 let failed = 0;
 let checked = 0;

@@ -11,7 +11,7 @@
  * Run: node tests/ports.mjs
  */
 import "./_catalog.mjs";
-import { kindOf } from "../js/kinds.js";
+import { kindOf } from "../src/core/kinds.js";
 
 let failed = 0;
 

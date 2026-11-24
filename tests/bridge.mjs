@@ -23,8 +23,8 @@ globalThis.sessionStorage = {
   clear: () => store.clear(),
 };
 
-const { bridgeFromUrl } = await import("../js/bridge.js");
-const { EventStream } = await import("../js/sse.js");
+const { bridgeFromUrl } = await import("../src/core/bridge.js");
+const { EventStream } = await import("../src/core/sse.js");
 
 let failed = 0;
 let checked = 0;
