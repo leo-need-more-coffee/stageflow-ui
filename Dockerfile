@@ -1,15 +1,19 @@
-# The editor is static files; the image is those files plus a node runtime for
-# the small server that hands them out (server.js). No build step, no npm
-# install — there are no dependencies to install.
+# Build the editor, then serve the built files with the small static server
+# (server.js). The runtime image has no node_modules: the server has no
+# dependencies and the page is already built.
+FROM node:22-alpine AS build
+WORKDIR /src
+COPY package.json package-lock.json ./
+RUN npm ci
+COPY index.html vite.config.ts tsconfig.json ./
+COPY src ./src
+COPY public ./public
+RUN npm run build
+
 FROM node:22-alpine
-
 WORKDIR /app
-
-COPY package.json server.js index.html ./
-COPY css ./css
-COPY js ./js
-# the interface's text: without these the page falls back to English
-COPY i18n ./i18n
+COPY package.json server.js ./
+COPY --from=build /src/dist ./dist
 
 ENV PORT=8080 \
     HOST=0.0.0.0

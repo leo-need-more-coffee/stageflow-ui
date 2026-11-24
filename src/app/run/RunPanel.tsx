@@ -489,7 +489,7 @@ function AnswerForm({ editor }: { editor: Editor }) {
         <Segmented size="sm" value={mode} onChange={setMode}
           options={[{ value: "form", label: t("app.answer.form") }, { value: "json", label: "JSON" }]} />
       </div>
-      <form className="flex flex-col gap-2" onSubmit={(e) => { e.preventDefault(); void send(); }}>
+      <form className="flex max-w-[720px] flex-col gap-2" onSubmit={(e) => { e.preventDefault(); void send(); }}>
         {mode === "form"
           ? (
             <div className="grid grid-cols-[minmax(80px,max-content)_1fr] items-center gap-x-3 gap-y-1.5">

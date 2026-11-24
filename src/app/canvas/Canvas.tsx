@@ -107,10 +107,30 @@ function CanvasInner() {
     setCards(buildCards(editor, dragged.current, rev));
   }, [editor, rev]);
 
+  /**
+   * Fit the graph, unless that makes the cards unreadable: a long pipeline
+   * fitted whole is a column of specks. Then the top of the graph is shown at
+   * a size that can be read, and the rest is a scroll away.
+   */
+  const fitReadable = useCallback(async () => {
+    await flow.fitView({ padding: 0.15, duration: 0, maxZoom: 1.1 });
+    const zoom = flow.getZoom();
+    if (zoom >= 0.6) return;
+    const bounds = flow.getNodesBounds(flow.getNodes().filter((n) => n.type === "card"));
+    const rect = wrapper.current?.getBoundingClientRect();
+    if (!rect) return;
+    const readable = 0.8;
+    void flow.setViewport({
+      x: rect.width / 2 - (bounds.x + bounds.width / 2) * readable,
+      y: 40 - bounds.y * readable,
+      zoom: readable,
+    });
+  }, [flow]);
+
   // the canvas tells the editor how to reach it: fit, centre, paste point
   useEffect(() => {
     editor.canvas = {
-      fitView: () => void flow.fitView({ padding: 0.15, duration: 250, maxZoom: 1.1 }),
+      fitView: () => void fitReadable(),
       centerWorld: () => {
         const rect = wrapper.current?.getBoundingClientRect();
         if (!rect) return { x: 0, y: 0 };
@@ -135,7 +155,7 @@ function CanvasInner() {
       },
     };
     return () => { editor.canvas = null; };
-  }, [editor, flow]);
+  }, [editor, flow, fitReadable]);
 
   // regions are framed around wherever their cards are now, mid-drag included
   const graph = editor.model.graph;
@@ -350,8 +370,7 @@ function CanvasInner() {
               onPaneClick={() => { if (sel) editor.selection.clear(); }}
               onMoveEnd={(_, viewport) => { editor.view = viewport; editor.persist(); }}
               defaultViewport={editor.savedView ?? undefined}
-              fitView={!editor.savedView}
-              fitViewOptions={{ padding: 0.15, maxZoom: 1.1 }}
+              onInit={() => { if (!editor.savedView) void fitReadable(); }}
               minZoom={0.15}
               maxZoom={2}
               zoomOnDoubleClick={false}

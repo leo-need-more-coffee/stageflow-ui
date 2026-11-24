@@ -28,6 +28,9 @@ export interface FieldEnv {
   touch: () => void;
 }
 
+/** A catalog label without its own "+ ", for a button that draws a plus icon. */
+const plain = (text: string) => text.replace(/^\+\s*/, "");
+
 // ------------------------------------------------------------- primitives
 
 /** An input that keeps its text while typed and hands it over when done. */
@@ -319,6 +322,27 @@ function RowCell({ col, row, env, commit }: { col: any; row: any; env: FieldEnv;
       <SourcePicker value={row[col.key] ?? ""} onChange={(next) => { if (!next) return; row[col.key] = next; commit(); }} />
     );
   }
+  if (col.type === "select" && col.options?.length === 2 && col.options.some((o: any) => (Array.isArray(o) ? o[0] : o) === "cel")) {
+    // a field of the answer, or an expression: the same buttons as a source
+    const [field] = col.options.map((o: any) => (Array.isArray(o) ? o[0] : o)).filter((v: string) => v !== "cel");
+    const current = row[col.key] === "cel" ? "cel" : field;
+    const choices = [
+      { value: field, icon: <Hash size={13} />, title: String(col.options.find((o: any) => (Array.isArray(o) ? o[0] : o) === field)?.[1] ?? field) },
+      { value: "cel", icon: <Braces size={13} />, title: t("field.source.cel") },
+    ];
+    return (
+      <div className="inline-flex shrink-0 rounded-md border border-border bg-surface-2 p-0.5" title={col.title}>
+        {choices.map((c) => (
+          <button key={c.value} type="button" title={c.title} aria-pressed={current === c.value}
+            onClick={() => { row[col.key] = c.value; commit(); }}
+            className={cn("flex h-[26px] w-7 items-center justify-center rounded-[5px] transition-colors",
+              current === c.value ? "bg-surface text-fg shadow-card" : "text-subtle hover:text-fg")}>
+            {c.icon}
+          </button>
+        ))}
+      </div>
+    );
+  }
   if (col.type === "node-ref") {
     return (
       <div style={style}>
@@ -400,7 +424,7 @@ export function SpecArgs({ field, env }: { field: any; env: FieldEnv }) {
         : (
           <div>
             <Button variant="ghost" size="sm" className="-ml-2" onClick={() => setAdding(true)}>
-              <Plus /> {t("args.addOwn")}
+              <Plus /> {plain(t("args.addOwn"))}
             </Button>
           </div>
         )}
@@ -551,7 +575,7 @@ export function SpecOutputs({ field, env }: { field: any; env: FieldEnv }) {
         : (
           <div>
             <Button variant="ghost" size="sm" className="-ml-2" onClick={() => setAdding(true)}>
-              <Plus /> {t(contractKnown ? "outs.addExpr" : "outs.addField")}
+              <Plus /> {plain(t(contractKnown ? "outs.addExpr" : "outs.addField"))}
             </Button>
           </div>
         )}

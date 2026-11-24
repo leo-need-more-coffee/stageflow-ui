@@ -316,7 +316,7 @@ const pkg = JSON.parse(
   await (await import("node:fs/promises")).readFile(
     new URL("../package.json", import.meta.url), "utf8"));
 check(VERSION === pkg.version,
-  `js/version.js (${VERSION}) and package.json (${pkg.version}) disagree`);
+  `src/core/version.js (${VERSION}) and package.json (${pkg.version}) disagree`);
 
 console.log(failed
   ? `\nchecks failed: ${failed} of ${checked}`

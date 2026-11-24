@@ -20,8 +20,10 @@
 ![The editor with a pipeline open](docs/img/editor.png)
 
 A visual editor for [StageFlow](https://github.com/leo-need-more-coffee/stageflow)
-pipelines. Plain HTML and ES modules: no build step, no framework, no
-dependencies.
+pipelines, in React and TypeScript, with the canvas drawn by
+[React Flow](https://reactflow.dev). The graph model, the node kinds, the
+validation and the run client are framework-free JavaScript in `src/core`,
+tested on their own; the interface in `src/app` only draws them.
 
 The editor holds no stages and executes nothing. It asks a StageFlow backend
 for the stage specifications, draws the graph from them, and sends runs back
@@ -31,7 +33,9 @@ second implementation of them in JavaScript.
 ## Run it
 
 ```bash
-npm start                      # http://127.0.0.1:8080
+npm ci
+npm run dev                    # http://127.0.0.1:5173, reloads as you edit
+npm run build && npm start     # the built editor on http://127.0.0.1:8080
 ```
 
 or:
@@ -99,8 +103,8 @@ blocked before it leaves the browser — a blocklist, usually. The editor cannot
 tell that apart from the backend being down; the browser's network tab, or
 uBlock's logger, can.
 
-`server.js` is a hundred lines of static file serving with no dependencies:
-ES modules cannot be loaded from `file://`, so the page has to come over http.
+`server.js` is a hundred lines of static file serving with no dependencies; it
+serves `dist/`, which `npm run build` writes.
 `PORT` and `HOST` come from the environment (`UI_PORT` in compose).
 
 ## What it does
@@ -208,9 +212,8 @@ answers Chrome's private-network preflight). A plain http address elsewhere is
 blocked before the request is made — the dialog says so rather than letting it
 read as a backend that is switched off.
 
-The version lives in two places, `package.json` and `js/version.js` (the
-browser cannot read the first, nothing rewrites the second — there is no build
-step); `npm test` fails if they disagree, and so does the release workflow if
+The version lives in two places, `package.json` and `src/core/version.js`;
+`npm test` fails if they disagree, and so does the release workflow if
 the tag does not match both.
 
 ## Documentation
@@ -223,14 +226,15 @@ the tag does not match both.
 | [Running and debugging](docs/running.md) | the run pace, starting variables, the debug panel, the run API |
 | [Secrets](docs/secrets.md) | where keys live and why they are not in the pipeline |
 | [The bridge to an agent](docs/bridge.md) | letting an assistant draw on this canvas, and read back what you drew |
-| [Embedding](docs/embedding.md) | `createEditor` options, the public API, bundling catalogs, the layout of `js/` |
+| [Embedding](docs/embedding.md) | `createEditor` options, the public API, bundling catalogs |
 
 ## Tests
 
-Plain node scripts, no framework:
+The core's tests are plain node scripts; the interface is checked by the
+type checker and the build:
 
 ```bash
-npm test
+npm test && npm run typecheck && npm run build
 ```
 
 They cover what the eye misses: that every node kind has a port for the next

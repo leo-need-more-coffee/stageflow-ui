@@ -16,27 +16,33 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: "22"
-      - name: Tag, package.json and js/version.js must agree
+      - name: Tag, package.json and src/core/version.js must agree
         run: |
           tag="${GITHUB_REF_NAME}"
           pkg=$(node -p "require('./package.json').version")
           src=$(node --input-type=module -e \
-                  "const m = await import('./js/version.js'); console.log(m.VERSION)")
-          echo "tag=$tag package.json=$pkg js/version.js=$src"
+                  "const m = await import('./src/core/version.js'); console.log(m.VERSION)")
+          echo "tag=$tag package.json=$pkg src/core/version.js=$src"
           test "$tag" = "$pkg" || { echo "::error::tag $tag != package.json $pkg"; exit 1; }
-          test "$tag" = "$src" || { echo "::error::tag $tag != js/version.js $src"; exit 1; }
+          test "$tag" = "$src" || { echo "::error::tag $tag != src/core/version.js $src"; exit 1; }
+      - run: npm ci
       - name: The editor's own tests
         run: npm test
+      - run: npm run typecheck
 
   release:
     needs: check
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm ci && npm run build
       - name: Pack what a server needs to serve
         run: |
           zip -r "stageflow-ui-${GITHUB_REF_NAME}.zip" \
-            index.html css js server.js package.json LICENSE README.md
+            dist server.js package.json LICENSE README.md
       - uses: softprops/action-gh-release@v2
         with:
           files: stageflow-ui-${{ github.ref_name }}.zip

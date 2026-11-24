@@ -5,14 +5,14 @@ on:
     branches: [main]
     paths:
       - "index.html"
-      - "css/**"
-      - "js/**"
-      - "i18n/**"
+      - "src/**"
+      - "public/**"
+      - "package*.json"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
-# the editor is static files, so the demo is the repository itself with
-# nothing built; it asks for a backend address on the connection screen
+# the demo is the built editor; it asks for a backend address on the
+# connection screen
 permissions:
   contents: read
   pages: write
@@ -30,16 +30,14 @@ jobs:
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
-      - name: Take only what the browser needs
-        run: |
-          mkdir -p _site
-          # i18n included: the page fetches its catalogs at runtime, and without
-          # them every t() falls through to its own key — a toolbar reading
-          # "bar.file bar.edit". tests/i18n.mjs guards this list.
-          cp -r index.html css js i18n _site/
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Build the editor
+        run: npm ci && npm run build
       - uses: actions/configure-pages@v5
       - uses: actions/upload-pages-artifact@v3
         with:
-          path: _site
+          path: dist
       - uses: actions/deploy-pages@v4
         id: deploy
