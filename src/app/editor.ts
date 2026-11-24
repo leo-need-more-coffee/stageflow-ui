@@ -313,6 +313,43 @@ export class Editor extends EventTarget {
     if (alive.length !== this.selection.nodes.size) this.selection.setNodes(alive);
   }
 
+  /** The file Ctrl+S writes to, once one has been picked (Chromium only). */
+  #saveHandle: any = null;
+
+  /**
+   * Save the pipeline as JSON. Where the browser can write files, the first
+   * save asks where and later ones write the same file in place; `as` asks
+   * again. Elsewhere it is a download.
+   */
+  async save({ as = false }: { as?: boolean } = {}) {
+    const json = `${JSON.stringify(this.getPipeline(), null, 2)}\n`;
+    const picker = (window as any).showSaveFilePicker;
+    if (!picker) {
+      const url = URL.createObjectURL(new Blob([json], { type: "application/json" }));
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = "pipeline.json";
+      link.click();
+      URL.revokeObjectURL(url);
+      return;
+    }
+    try {
+      if (as || !this.#saveHandle) {
+        this.#saveHandle = await picker({
+          suggestedName: this.#saveHandle?.name ?? "pipeline.json",
+          types: [{ description: "JSON", accept: { "application/json": [".json"] } }],
+        });
+      }
+      const writable = await this.#saveHandle.createWritable();
+      await writable.write(json);
+      await writable.close();
+      this.toast(t("app.save.done", { name: this.#saveHandle.name }), "ok");
+    } catch (err: any) {
+      if (err?.name === "AbortError") return; // the picker was closed
+      this.toast(t("app.save.failed", { reason: err?.message ?? String(err) }), "bad");
+    }
+  }
+
   toast(text: string, tone: Toast["tone"] = "info") {
     const toast = { id: ++toastIds, text, tone };
     this.toasts = [...this.toasts, toast];

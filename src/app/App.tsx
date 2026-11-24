@@ -37,6 +37,14 @@ function useShortcuts(editor: Editor, openPalette: () => void) {
         openPalette();
         return;
       }
+      if (mod && key === "s" && !e.altKey) {
+        // even from a field: blur it first, so what was typed is committed
+        e.preventDefault();
+        if (document.querySelector("[role=dialog]")) return;
+        (document.activeElement as HTMLElement | null)?.blur?.();
+        setTimeout(() => void editor.save({ as: e.shiftKey }), 0);
+        return;
+      }
       if (typing(e.target) || document.querySelector("[role=dialog]")) return;
       if (mod && !e.altKey) {
         if (key === "z") {

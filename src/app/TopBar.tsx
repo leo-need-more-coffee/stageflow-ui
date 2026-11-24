@@ -265,6 +265,7 @@ export function TopBar({ onCommand }: { onCommand: () => void }) {
         <MenuContent align="end" className="w-[250px]">
           <MenuItem onSelect={() => dialogs.newPipeline()}>{t("file.new")}</MenuItem>
           <MenuItem onSelect={() => dialogs.open("import")}>{t("file.import")}</MenuItem>
+          <MenuItem shortcut={`${mod}S`} onSelect={() => void editor.save()}>{t("app.save")}</MenuItem>
           <MenuItem onSelect={() => dialogs.open("export")}>{t("file.export")}</MenuItem>
           <MenuSeparator />
           <MenuItem onSelect={() => dialogs.open("settings")}>{t("file.settings")}</MenuItem>

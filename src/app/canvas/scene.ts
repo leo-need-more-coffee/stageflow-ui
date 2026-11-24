@@ -119,6 +119,20 @@ function runMark(editor: Editor, key: string | null, id: string): RunMark {
 }
 
 /** The frames and the cards of every graph shown. */
+/**
+ * A node's layout, kept while nothing that shapes it has changed. A drag
+ * rebuilds the scene on every step; with the same layout object a card that
+ * is not moving is not drawn again (see NodeCard's memo).
+ */
+const layouts = new WeakMap<object, { rev: number; showData: boolean; layout: any }>();
+function layoutOf(node: any, editor: Editor, env: any, rev: number) {
+  const known = layouts.get(node);
+  if (known && known.rev === rev && known.showData === editor.showData) return known.layout;
+  const layout = nodeLayout(node, editor.showData, env);
+  layouts.set(node, { rev, showData: editor.showData, layout });
+  return layout;
+}
+
 export function buildNodes(editor: Editor, shown: Shown[], dragged: Map<string, XYPosition>, rev: number,
   onOpen: (key: string) => void): Node[] {
   const env = { stages: editor.stages, backend: editor.backend, showDescriptions: () => editor.showDescriptions };
@@ -134,7 +148,7 @@ export function buildNodes(editor: Editor, shown: Shown[], dragged: Map<string, 
     const editing = key === editor.model.graphKey;
     const cards: CardNode[] = (graph?.nodes ?? []).map((node: any) => {
       const id = fid(key, node.id);
-      const layout = nodeLayout(node, editor.showData, env);
+      const layout = layoutOf(node, editor, env, rev);
       const run = runMark(editor, key, node.id);
       const ui = node.metadata?.ui ?? { x: 0, y: 0 };
       const position = dragged.get(id) ?? (frame
@@ -243,11 +257,13 @@ export function absoluteRegions(nodes: Node[], key: string | null) {
 
 export interface EdgeOptions {
   hovered: string | null;
+  /** a card is being dragged */
+  dragging?: boolean;
   onInsert: (from: string, portIndex: number, at: XYPosition) => void;
 }
 
 /** The order edges, the data edges and the dashed line from a call to its frame. */
-export function buildEdges(editor: Editor, shown: Shown[], nodes: Node[], { hovered, onInsert }: EdgeOptions): Edge[] {
+export function buildEdges(editor: Editor, shown: Shown[], nodes: Node[], { hovered, dragging = false, onInsert }: EdgeOptions): Edge[] {
   const out: Edge[] = [];
   const visited: string[] = editor.runner.visited;
   const walked = new Set<string>();
@@ -281,7 +297,8 @@ export function buildEdges(editor: Editor, shown: Shown[], nodes: Node[], { hove
             fresh: isNew(editor, key, node.id) || isNew(editor, key, target),
             live: live && trail && editor.runner.node === target,
             dashed: Boolean(port.dashed),
-            canInsert: true,
+            // no "+" popping up on wires the hand passes over mid-drag
+            canInsert: !dragging,
             onInsert,
           },
         });

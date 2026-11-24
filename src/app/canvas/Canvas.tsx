@@ -48,6 +48,9 @@ function CanvasInner() {
   const focusing = useRef<{ id: string; until: number } | null>(null);
   const [nodes, setNodes] = useState<Node[]>([]);
   const [hovered, setHovered] = useState<string | null>(null);
+  // while a card is dragged, the wires shown are its own: the hand slipping
+  // off it or passing over other cards must not flick wires on and off
+  const [dragging, setDragging] = useState(false);
   const [addAt, setAddAt] = useState<AddAt | null>(null);
   const [addOpen, setAddOpen] = useState(false);
   // for a moment after an outside change, cards glide to their new places
@@ -76,7 +79,15 @@ function CanvasInner() {
   const shownOf = useCallback((key: string | null): Shown =>
     shown.find((g) => g.key === key) ?? { key, graph: editor.graphOf(key), frame: null }, [shown, editor]);
   const openAlone = useCallback((key: string) => editor.openGraph(key), [editor]);
-  const rebuild = useCallback(() => setNodes(buildNodes(editor, shown, dragged.current, rev, openAlone)), [editor, shown, rev, openAlone]);
+  const rebuild = useCallback(() => setNodes(
+    // a node object without `measured` loses its handles in React Flow until
+    // it is measured again, and with them every wire it has: they would
+    // blink on each step of a drag. A card of the same size keeps them.
+    buildNodes(editor, shown, dragged.current, rev, openAlone).map((n) => {
+      const measured = flow.getInternalNode(n.id)?.measured;
+      return measured?.width === n.width && measured?.height === n.height ? { ...n, measured } : n;
+    }),
+  ), [editor, shown, rev, openAlone, flow]);
   useEffect(rebuild, [rebuild]);
   // the gesture handlers are made once; they reach the current scene here
   const rebuildRef = useRef(rebuild);
@@ -168,9 +179,9 @@ function CanvasInner() {
     setAddAt({ mode: "insert", key, from: id, portIndex, screen: at, flow: flow.screenToFlowPosition(at) });
   }, [flow]);
 
-  const edges = useMemo(() => buildEdges(editor, shown, nodes, { hovered, onInsert }),
+  const edges = useMemo(() => buildEdges(editor, shown, nodes, { hovered, dragging, onInsert }),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [editor, shown, nodes, hovered, onInsert, rev]);
+    [editor, shown, nodes, hovered, dragging, onInsert, rev]);
 
   // ------------------------------------------------------------ gestures
 
@@ -209,6 +220,7 @@ function CanvasInner() {
   }, [editor]);
 
   const onNodeDragStop = useCallback(() => {
+    setDragging(false);
     if (!dragged.current.size) return;
     let touched = false;
     for (const [flowId, at] of dragged.current) {
@@ -304,13 +316,17 @@ function CanvasInner() {
               nodeTypes={nodeTypes}
               edgeTypes={edgeTypes}
               onNodesChange={onNodesChange}
+              onNodeDragStart={(_, node) => {
+                setDragging(true);
+                if (node.type === "card") setHovered(node.id);
+              }}
               onNodeDragStop={onNodeDragStop}
               onConnect={onConnect}
               onConnectEnd={onConnectEnd}
               isValidConnection={(c) => Boolean(c.sourceHandle?.startsWith("o")) && c.targetHandle === "in"
                 && c.source !== c.target && parseFid(c.source).key === parseFid(c.target).key}
-              onNodeMouseEnter={(_, node) => { if (node.type === "card") setHovered(node.id); }}
-              onNodeMouseLeave={() => setHovered(null)}
+              onNodeMouseEnter={(_, node) => { if (node.type === "card" && !dragging) setHovered(node.id); }}
+              onNodeMouseLeave={() => { if (!dragging) setHovered(null); }}
               onNodeContextMenu={(_, node) => {
                 if (node.type !== "card") return;
                 const { key, id } = parseFid(node.id);

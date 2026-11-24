@@ -617,5 +617,9 @@
   "app.frame.summary": "узлов {nodes} · вызывается {callers}×",
   "app.frame.unused": "узлов {nodes} · нигде не вызывается",
   "app.frame.open": "Открыть отдельно",
-  "app.frame.empty": "Пусто — двойной клик, чтобы добавить узел"
+  "app.frame.empty": "Пусто — двойной клик, чтобы добавить узел",
+
+  "app.save": "Сохранить",
+  "app.save.done": "Сохранено в {name}",
+  "app.save.failed": "Не сохранилось: {reason}"
 }

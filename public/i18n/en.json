@@ -617,5 +617,9 @@
   "app.frame.summary": "{nodes} nodes · called {callers}×",
   "app.frame.unused": "{nodes} nodes · not called",
   "app.frame.open": "Open on its own",
-  "app.frame.empty": "Empty — double-click to add a node"
+  "app.frame.empty": "Empty — double-click to add a node",
+
+  "app.save": "Save",
+  "app.save.done": "Saved to {name}",
+  "app.save.failed": "Could not save: {reason}"
 }
