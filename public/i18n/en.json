@@ -139,7 +139,7 @@
   "conn.auth.note": "Sent with every request the editor makes. The name is a field because backends disagree — Authorization, X-Api-Key, whatever a gateway reads — and the editor authenticates nothing itself: it carries what it is given. Empty means it sends none. Kept in this browser's localStorage; treat it like the secret store, not like encryption.",
   "conn.authorized": "authorized",
   "conn.plan": "Plan",
-  "conn.plan.note": "What the editor draws and validates against: the palette, the limits in the debug panel and the warnings in the status bar. A view, not an entitlement — what a run may do the backend decides from your credentials, and a graph prepared for a plan you are not on is refused when it starts, by name.",
+  "conn.plan.note": "What the editor draws and validates against: the add menu, the limits in the run panel and the issues in the top bar. A view, not an entitlement — what a run may do the backend decides from your credentials, and a graph prepared for a plan you are not on is refused when it starts, by name.",
   "conn.plan.mine": "mine",
   "conn.plan.mine.is": "what these credentials are on — {plan}",
   "conn.plan.mine.unknown": "whatever the backend gives",
@@ -624,5 +624,7 @@
   "app.save.failed": "Could not save: {reason}",
 
   "app.card.stray": "not in {block}",
-  "app.card.strayHint": "Sits on the frame of {block} but is not part of it: it runs outside the block. Drag it out of the frame."
+  "app.card.strayHint": "Sits on the frame of {block} but is not part of it: it runs outside the block. Drag it out of the frame.",
+
+  "app.run.noStepsEnded": "No node was run"
 }

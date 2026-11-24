@@ -238,7 +238,7 @@ function StepList({ editor, steps, index, following, onPick }:
     <div className="flex min-h-0 flex-col border-r border-border">
       <PaneTitle>{t("app.run.steps")} <span className="text-subtle">{steps.length}</span></PaneTitle>
       <div ref={list} className="min-h-0 flex-1 overflow-y-auto px-1.5 pb-2">
-        {!steps.length ? <div className="px-2 py-3 text-[12px] text-subtle">{t("app.run.noSteps")}</div> : null}
+        {!steps.length ? <div className="px-2 py-3 text-[12px] text-subtle">{t(editor.runner.active ? "app.run.noSteps" : "app.run.noStepsEnded")}</div> : null}
         {steps.map((step, i) => (
           <button key={i} type="button" onClick={() => onPick(i)}
             onDoubleClick={() => editor.reveal({ graph: null, node: step.node, message: "" })}
