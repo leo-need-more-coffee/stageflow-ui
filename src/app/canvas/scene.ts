@@ -202,9 +202,36 @@ export function buildNodes(editor: Editor, shown: Shown[], dragged: Map<string, 
         },
       });
     }
-    out.push(...regionNodes(editor, key, graph, cards, frame), ...cards);
+    const regions = regionNodes(editor, key, graph, cards, frame);
+    markStrays(cards, regions);
+    out.push(...regions, ...cards);
   }
   return out;
+}
+
+/**
+ * A card lying on a block's frame without being part of the block reads as
+ * part of it. Such a card is marked with the block it only seems to be in.
+ */
+function markStrays(cards: CardNode[], regions: Node[]) {
+  const MIN = 12; // a card grazing the edge of a frame is not "in" it
+  for (const card of cards) {
+    const { id } = parseFid(card.id);
+    const w = card.width ?? 220;
+    const h = card.height ?? 80;
+    for (const region of regions) {
+      const data = region.data as { title: string; color: string; owner: string; members: string[] };
+      if (data.members.includes(id) || data.owner === id) continue;
+      const rw = region.width ?? 0;
+      const rh = region.height ?? 0;
+      const dx = Math.min(card.position.x + w, region.position.x + rw) - Math.max(card.position.x, region.position.x);
+      const dy = Math.min(card.position.y + h, region.position.y + rh) - Math.max(card.position.y, region.position.y);
+      if (dx > MIN && dy > MIN) {
+        card.data.stray = { block: data.owner, color: data.color, label: t("app.card.stray", { block: data.owner }), hint: t("app.card.strayHint", { block: data.owner }) };
+        break;
+      }
+    }
+  }
 }
 
 /** The blocks (try bodies, loops, branches) of one graph, as frames behind its cards. */

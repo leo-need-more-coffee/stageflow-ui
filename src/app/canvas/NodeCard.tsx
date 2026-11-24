@@ -10,7 +10,7 @@
  * reads on the left, what it writes on the right.
  */
 import { Handle, Position, type NodeProps, type Node } from "@xyflow/react";
-import { AlertCircle, Check, Hourglass, Loader2, Maximize2, X } from "lucide-react";
+import { AlertCircle, Check, Hourglass, Loader2, LogOut, Maximize2, X } from "lucide-react";
 import { memo } from "react";
 
 import { varColor } from "@/core/colors.js";
@@ -34,6 +34,8 @@ export interface CardData extends Record<string, unknown> {
   dim: boolean;
   highlightVar: string | null;
   labels: { entry: string };
+  /** lies on the frame of a block it is not part of */
+  stray?: { block: string; color: string; label: string; hint: string };
 }
 
 export type CardNode = Node<CardData, "card">;
@@ -65,7 +67,7 @@ function DataRow({ label, color, highlighted, mono = true }:
 }
 
 function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
-  const { node, layout, env, run, issues, marked, dim, highlightVar, isEntry, labels } = data;
+  const { node, layout, env, run, issues, marked, dim, highlightVar, isEntry, labels, stray } = data;
   const kind = kindOf(node);
   const description = layout.hasDescription ? kind.description(node, env) : "";
   const subtitle = kind.subtitle(node, env);
@@ -87,6 +89,20 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
       )}
       style={{ width: layout.width, height: layout.height }}
     >
+      {stray
+        ? (
+          <>
+            {/* not part of the block whose frame it sits on: outlined apart */}
+            <div className="pointer-events-none absolute -inset-[5px] rounded-[14px] border-[1.5px] border-dashed border-warn/80" />
+            <Tip content={stray.hint} side="top">
+              <div className="absolute -top-[15px] left-3 flex h-[18px] items-center gap-1 rounded-full border border-warn/40 bg-surface px-1.5 text-[10.5px] font-medium text-warn shadow-card">
+                <LogOut size={10} strokeWidth={2.25} />
+                {stray.label}
+              </div>
+            </Tip>
+          </>
+        )
+        : null}
       {/* the inlet: any order edge comes in here */}
       {node.type !== "entry"
         ? <Handle type="target" position={Position.Top} id="in" style={{ left: layout.width / 2 }} />
@@ -181,7 +197,8 @@ function NodeCardImpl({ data, selected }: NodeProps<CardNode>) {
 export const NodeCard = memo(NodeCardImpl, (a, b) =>
   a.data.rev === b.data.rev && a.selected === b.selected && a.data.run === b.data.run
   && a.data.dim === b.data.dim && a.data.marked === b.data.marked
-  && a.data.highlightVar === b.data.highlightVar && a.data.layout === b.data.layout);
+  && a.data.highlightVar === b.data.highlightVar && a.data.layout === b.data.layout
+  && a.data.stray?.block === b.data.stray?.block);
 
 /** A block's frame: the body of a try, a loop or a parallel branch. */
 export interface RegionData extends Record<string, unknown> {

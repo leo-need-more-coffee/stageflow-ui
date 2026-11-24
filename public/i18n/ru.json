@@ -621,5 +621,8 @@
 
   "app.save": "Сохранить",
   "app.save.done": "Сохранено в {name}",
-  "app.save.failed": "Не сохранилось: {reason}"
+  "app.save.failed": "Не сохранилось: {reason}",
+
+  "app.card.stray": "не в {block}",
+  "app.card.strayHint": "Стоит на рамке {block}, но в блок не входит: выполняется вне его. Вытащите из рамки."
 }

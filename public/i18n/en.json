@@ -621,5 +621,8 @@
 
   "app.save": "Save",
   "app.save.done": "Saved to {name}",
-  "app.save.failed": "Could not save: {reason}"
+  "app.save.failed": "Could not save: {reason}",
+
+  "app.card.stray": "not in {block}",
+  "app.card.strayHint": "Sits on the frame of {block} but is not part of it: it runs outside the block. Drag it out of the frame."
 }
