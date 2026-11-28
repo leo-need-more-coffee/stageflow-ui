@@ -53,8 +53,8 @@ because the editor has no business deciding what a credential is called.
 
 ## Nothing to run? There is a public one
 
-A small demo backend is up, so the editor has something to talk to without
-installing anything:
+The [example backend](https://github.com/leo-need-more-coffee/stageflow-example)
+is up, so the editor has something to talk to without installing anything:
 
 **[Open the editor on it →](https://leo-need-more-coffee.github.io/stageflow-ui/?backend=https://stageflow.lazy.su)**
 
@@ -62,39 +62,35 @@ installing anything:
 https://stageflow.lazy.su
 ```
 
-Seven small stages — count the words in a text, roll dice, write a text out a
-few words at a time as a stream, fail on purpose so `retry` has something to
-retry — plus the seventeen the core ships with. No model and no network, so the
-same graph gives the same answer every time.
+It is a support bot: load a ticket, find out what it is about, search a
+knowledge base, then reply or hand the ticket to a person. The bot's stages,
+plus the ones the core ships with. It runs on the current release of the core.
+There is no model key on the server, so the stages that call a model fail —
+and a pipeline built for that falls back to keyword rules, which is worth
+watching in the debugger.
 
-Five ready-made graphs are served alongside it. Save one and open it with
-**⋯ → Import JSON…**:
+Seven ready-made graphs are served alongside it, the same bot at seven sizes.
+Save one and open it with **⋯ → Import JSON…**:
 
 | | Shows |
 |---|---|
-| [`01-text.json`](https://stageflow.lazy.su/pipelines/01-text.json) | a straight line and one `condition` |
-| [`02-typing.json`](https://stageflow.lazy.su/pipelines/02-typing.json) | a stream in the run panel, and reserve against charge |
-| [`03-dice.json`](https://stageflow.lazy.su/pipelines/03-dice.json) | `parallel` branches, then a `switch` |
-| [`04-retry.json`](https://stageflow.lazy.su/pipelines/04-retry.json) | `retry` getting through, and `try`/`except` catching what does not |
-| [`05-map.json`](https://stageflow.lazy.su/pipelines/05-map.json) | `map` over a list, collecting into lists |
+| [`01-triage.json`](https://stageflow.lazy.su/pipelines/01-triage.json) | a straight line: load a ticket, let the model read it |
+| [`02-auto-reply.json`](https://stageflow.lazy.su/pipelines/02-auto-reply.json) | a knowledge base search and the first `condition` |
+| [`03-routing.json`](https://stageflow.lazy.su/pipelines/03-routing.json) | `parallel`, then a `switch` on urgency |
+| [`04-support-bot.json`](https://stageflow.lazy.su/pipelines/04-support-bot.json) | `try`/`except` down to keyword rules, `retry`, a subpipeline |
+| [`05-batch-triage.json`](https://stageflow.lazy.su/pipelines/05-batch-triage.json) | `map`: one region of the graph per ticket |
+| [`06-rules-only.json`](https://stageflow.lazy.su/pipelines/06-rules-only.json) | the whole bot with no model — what the `basic` plan is built around |
+| [`07-agent-review.json`](https://stageflow.lazy.su/pipelines/07-agent-review.json) | `wait`: the draft waits for a person, saved on the server |
 
-Visitors are anonymous and get a deliberately narrow plan: 30 seconds and 300
-steps a run, four runs going at once across everybody, two per visitor. Paste
-this in the **Authorization** field for a roomier one — every stage, 120
-seconds, 3000 steps:
-
-```
-sf-demo-VrQtWaSG4rffbjZR
-```
-
-It is written here on purpose; there is nothing behind it to protect. Both
-plans are capped, both forget everything when the run ends, and the backend
-holds no secrets and reaches no network — so the worst a graph can do is spend
-its own ceiling. [`&plan=plus`](https://leo-need-more-coffee.github.io/stageflow-ui/?backend=https://stageflow.lazy.su&plan=plus)
-on the editor's own address shows what the wider plan allows **without being on
-it** — the add menu opens up, the ceilings change, and a run still goes on the
-plan the credential says. That is the policy mechanism the
-[core documents](https://leo-need-more-coffee.github.io/stageflow/policy/):
+No credential is needed: visitors run on the open plan, four runs going at
+once across everybody, and the backend holds no secrets. The bot has two
+narrower plans as well. [`&plan=basic`](https://leo-need-more-coffee.github.io/stageflow-ui/?backend=https://stageflow.lazy.su&plan=basic)
+on the editor's own address shows what the cheapest one allows **without being
+on it** — the add menu narrows to rules and plain nodes, `map` and the model
+stages grey out with the reason, the ceilings drop to 15 seconds and 200 steps;
+[`&plan=pro`](https://leo-need-more-coffee.github.io/stageflow-ui/?backend=https://stageflow.lazy.su&plan=pro) shows the paid
+one. A run still goes on the plan the credential says. That is the policy
+mechanism the [core documents](https://leo-need-more-coffee.github.io/stageflow/policy/):
 drawing is not running, and a name is not a permission.
 
 If the connection screen says the backend is not reachable, the request is being
